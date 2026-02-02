@@ -1,7 +1,10 @@
+import { isQuiescent } from './quiescence.js'
+
 export interface MonologueLoopConfig {
   generate: (context?: string) => AsyncIterable<string>
   onToken: (token: string) => void
   onCycleComplete: (buffer: string) => void
+  onQuiescent?: () => void
   maxTokensPerCycle: number
 }
 
@@ -10,6 +13,7 @@ export class MonologueLoop {
   private _isPaused: boolean = false
   private _isRunning: boolean = false
   private buffer: string = ''
+  private lastQuiescenceCheck: number = 0
 
   constructor(config: MonologueLoopConfig) {
     this.config = config
@@ -28,6 +32,7 @@ export class MonologueLoop {
   async runOneCycle(context?: string): Promise<void> {
     this._isRunning = true
     this.buffer = ''
+    this.lastQuiescenceCheck = 0
     let charCount = 0
 
     try {
@@ -40,6 +45,15 @@ export class MonologueLoop {
         this.config.onToken(token)
 
         if (charCount >= this.config.maxTokensPerCycle) break
+
+        // Check for quiescence every 200 chars
+        if (charCount - this.lastQuiescenceCheck >= 200) {
+          this.lastQuiescenceCheck = charCount
+          if (isQuiescent(this.buffer)) {
+            this.config.onQuiescent?.()
+            break
+          }
+        }
       }
     } finally {
       this._isRunning = false

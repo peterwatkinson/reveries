@@ -100,7 +100,9 @@ Return JSON only: {
       graph: this.graph,
       db: this.db,
       selfModel,
-      config: this.config
+      config: this.config,
+      circuitBreaker: this.circuitBreaker,
+      embedFn: (text) => generateEmbedding(text, this.config.llm.embeddingModel),
     })
 
     // 9. Schedule consolidation
