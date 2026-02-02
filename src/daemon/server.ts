@@ -10,6 +10,7 @@ import type { Database } from '../storage/database.js'
 import type { SelfModel } from '../memory/types.js'
 import type { ReveriesConfig } from '../config.js'
 import type { MonologueManager } from '../monologue/manager.js'
+import type { ConsolidationEngine } from '../consolidation/engine.js'
 
 export class DaemonServer {
   private server: net.Server | null = null
@@ -20,6 +21,9 @@ export class DaemonServer {
   private db: Database | null = null
   private config: ReveriesConfig | null = null
   private monologue: MonologueManager | null = null
+  private consolidation: ConsolidationEngine | null = null
+  private conversationTimer: ReturnType<typeof setTimeout> | null = null
+  private monologuePausedForConversation: boolean = false
 
   init(params: {
     graph: MemoryGraph
@@ -44,6 +48,10 @@ export class DaemonServer {
     if (this.conversationHandler) {
       this.conversationHandler.setMonologue(monologue)
     }
+  }
+
+  setConsolidation(engine: ConsolidationEngine): void {
+    this.consolidation = engine
   }
 
   async start(socketPath: string = SOCKET_PATH): Promise<void> {
@@ -129,7 +137,7 @@ export class DaemonServer {
         this.handleShutdown(socket, requestId)
         break
       case 'consolidate':
-        this.sendResponse(socket, { type: 'ok' }, requestId)
+        this.handleConsolidate(socket, requestId)
         break
       case 'memory-stats':
         this.sendResponse(socket, { type: 'ok', data: this.getMemoryStats() }, requestId)
@@ -157,10 +165,14 @@ export class DaemonServer {
       return
     }
 
-    // Pause monologue during conversation
-    if (this.monologue) {
+    // Pause monologue on the first message of a conversation session
+    if (this.monologue && !this.monologuePausedForConversation) {
       this.monologue.pause()
+      this.monologuePausedForConversation = true
     }
+
+    // Reset the conversation timeout timer
+    this.resetConversationTimer()
 
     try {
       await this.conversationHandler.handleMessage(
@@ -174,11 +186,35 @@ export class DaemonServer {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown error during chat'
       this.sendResponse(socket, { type: 'error', message: errorMessage }, requestId)
-    } finally {
-      // Resume monologue after conversation turn
-      if (this.monologue) {
+    }
+  }
+
+  private resetConversationTimer(): void {
+    if (this.conversationTimer) {
+      clearTimeout(this.conversationTimer)
+    }
+    this.conversationTimer = setTimeout(() => {
+      // No message for 30s — consider conversation ended
+      if (this.monologue && this.monologuePausedForConversation) {
         this.monologue.resumeAfterConversation()
+        this.monologuePausedForConversation = false
       }
+      this.conversationTimer = null
+    }, 30_000)
+  }
+
+  private async handleConsolidate(socket: net.Socket, requestId?: string): Promise<void> {
+    if (!this.consolidation) {
+      this.sendResponse(socket, { type: 'error', message: 'Consolidation engine not available' }, requestId)
+      return
+    }
+
+    try {
+      await this.consolidation.consolidate()
+      this.sendResponse(socket, { type: 'ok', data: this.getMemoryStats() }, requestId)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Consolidation failed'
+      this.sendResponse(socket, { type: 'error', message: msg }, requestId)
     }
   }
 

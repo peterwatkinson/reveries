@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     config: lifecycle.config
   })
   server.setMonologue(lifecycle.monologue)
+  server.setConsolidation(lifecycle.consolidation)
 
   await server.start()
   await lifecycle.monologue.start()

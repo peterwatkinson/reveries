@@ -10,6 +10,7 @@ import { ReveriesConfig, loadConfig } from '../config.js'
 import { createLLMProvider } from '../providers/llm.js'
 import { generateEmbedding } from '../providers/embeddings.js'
 import { generateText } from 'ai'
+import { buildAbstractionPrompt } from '../consolidation/prompts.js'
 import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -61,26 +62,7 @@ export class DaemonLifecycle {
           const model = provider(this.config.llm.consolidationModel)
           const { text } = await generateText({
             model,
-            prompt: `Extract the key abstractions from these experiences. Be careful: abstractions can drift from reality. Include specific anchoring quotes.
-
-Experiences:
-${experiences.map((e, i) => `${i + 1}. ${e}`).join('\n')}
-
-Return JSON only: {
-  "episodes": [{
-    "summary": "2-3 sentence compression",
-    "topics": ["topic1"],
-    "salience": 0.0-1.0,
-    "confidence": 0.0-1.0,
-    "exemplars": [{ "quote": "exact quote", "significance": "why it matters" }],
-    "patterns": ["behavioral or thematic pattern observed"]
-  }],
-  "selfModelUpdates": {
-    "currentFocus": "string or null",
-    "newTendency": "string or null",
-    "newValue": "string or null"
-  }
-}`
+            prompt: buildAbstractionPrompt(experiences)
           })
           return JSON.parse(text)
         } catch (e) {

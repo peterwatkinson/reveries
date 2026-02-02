@@ -122,11 +122,4 @@ export class ConversationHandler {
     return fullResponse
   }
 
-  endConversation(): void {
-    this.currentConversation = null
-    // Resume monologue after conversation ends
-    if (this.monologue) {
-      this.monologue.resumeAfterConversation()
-    }
-  }
 }

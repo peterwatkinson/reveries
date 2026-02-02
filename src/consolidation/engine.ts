@@ -4,6 +4,21 @@ import { MemoryGraph, DecayOptions } from '../memory/graph.js'
 import { SelfModel } from '../memory/types.js'
 import { persistGraph } from '../memory/hydrator.js'
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0
+  let magA = 0
+  let magB = 0
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]
+    magA += a[i] * a[i]
+    magB += b[i] * b[i]
+  }
+  magA = Math.sqrt(magA)
+  magB = Math.sqrt(magB)
+  if (magA === 0 || magB === 0) return 0
+  return dot / (magA * magB)
+}
+
 interface ConsolidationResult {
   episodes: {
     summary: string
@@ -55,41 +70,73 @@ export class ConsolidationEngine {
       const contents = raw.map(r => r.content)
       const result = await this.consolidateFn(contents)
 
-      // 3. Create episodes in the graph
+      // 3. Create or merge episodes in the graph
       for (const ep of result.episodes) {
         const embedding = await this.embedFn(ep.summary)
-        const id = nanoid()
 
-        this.graph.addNode({
-          id,
-          type: 'episode',
-          embedding,
-          salience: ep.salience,
-          created: new Date(),
-          lastAccessed: new Date(),
-          accessCount: 0,
-          data: {
-            summary: ep.summary,
-            topics: ep.topics,
-            confidence: ep.confidence,
-            exemplars: ep.exemplars.map(e => ({
-              quote: e.quote,
-              context: e.significance,
-              timestamp: new Date()
-            })),
-            patterns: ep.patterns,
-            before: [],
-            after: [],
-            gap: { duration: 0, significance: null }
+        // Check for a highly similar existing episode to merge into
+        let merged = false
+        if (this.graph.nodeCount > 0) {
+          const nearest = this.graph.findNearestNodes(embedding, 1)
+          if (nearest.length > 0) {
+            const similarity = cosineSimilarity(embedding, nearest[0].embedding)
+            if (similarity > 0.85) {
+              // Merge into existing episode
+              const existing = nearest[0]
+              const existingExemplars = (existing.data.exemplars as { quote: string; context: string; timestamp: Date }[]) || []
+              const newExemplars = ep.exemplars.map(e => ({
+                quote: e.quote,
+                context: e.significance,
+                timestamp: new Date()
+              }))
+              existing.data.summary = `${existing.data.summary} ${ep.summary}`
+              existing.data.exemplars = [...existingExemplars, ...newExemplars]
+              existing.salience = Math.min(1, Math.max(existing.salience, ep.salience))
+              this.graph.reinforceNode(existing.id)
+              // Strengthen existing links
+              const existingLinks = this.graph.getLinks(existing.id)
+              for (const link of existingLinks) {
+                link.strength = Math.min(1, link.strength + 0.1)
+              }
+              merged = true
+            }
           }
-        })
+        }
 
-        // 4. Find and link related existing episodes
-        if (this.graph.nodeCount > 1) {
-          const nearest = this.graph.findNearestNodes(embedding, 3)
-          for (const neighbor of nearest) {
-            if (neighbor.id !== id) {
-              this.graph.addLink(id, neighbor.id, 0.5, 'thematic')
+        if (!merged) {
+          const id = nanoid()
+
+          this.graph.addNode({
+            id,
+            type: 'episode',
+            embedding,
+            salience: ep.salience,
+            created: new Date(),
+            lastAccessed: new Date(),
+            accessCount: 0,
+            data: {
+              summary: ep.summary,
+              topics: ep.topics,
+              confidence: ep.confidence,
+              exemplars: ep.exemplars.map(e => ({
+                quote: e.quote,
+                context: e.significance,
+                timestamp: new Date()
+              })),
+              patterns: ep.patterns,
+              before: [],
+              after: [],
+              gap: { duration: 0, significance: null }
+            }
+          })
+
+          // 4. Find and link related existing episodes
+          if (this.graph.nodeCount > 1) {
+            const nearest = this.graph.findNearestNodes(embedding, 3)
+            for (const neighbor of nearest) {
+              if (neighbor.id !== id) {
+                this.graph.addLink(id, neighbor.id, 0.5, 'thematic')
+              }
             }
           }
         }
