@@ -3,6 +3,7 @@ export interface GraphNode {
   type: string
   embedding: number[]
   salience: number
+  created: Date
   lastAccessed: Date
   accessCount: number
   data: Record<string, unknown>
@@ -22,6 +23,7 @@ export interface SpreadActivationOptions {
 export interface DecayOptions {
   halfLifeDays: number
   minimumSalience: number
+  minimumLinkStrength?: number
 }
 
 function dotProduct(a: number[], b: number[]): number {
@@ -162,7 +164,10 @@ export class MemoryGraph {
       const decayFactor = Math.pow(0.5, daysSinceAccess / options.halfLifeDays)
 
       for (const link of links) {
-        link.strength = link.strength * decayFactor
+        link.strength = Math.max(
+          link.strength * decayFactor,
+          options.minimumLinkStrength ?? 0.05
+        )
       }
     }
   }

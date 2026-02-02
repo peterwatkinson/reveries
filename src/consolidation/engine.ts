@@ -65,6 +65,7 @@ export class ConsolidationEngine {
           type: 'episode',
           embedding,
           salience: ep.salience,
+          created: new Date(),
           lastAccessed: new Date(),
           accessCount: 0,
           data: {

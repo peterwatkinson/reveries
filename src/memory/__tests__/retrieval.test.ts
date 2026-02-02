@@ -9,10 +9,10 @@ describe('Associative Retrieval', () => {
     graph = new MemoryGraph()
 
     // Build a small memory network
-    graph.addNode({ id: 'work-project', type: 'episode', embedding: [0.9, 0.1, 0], salience: 0.8, lastAccessed: new Date(), accessCount: 3, data: { summary: 'Working on fintech platform' } })
-    graph.addNode({ id: 'deadline-stress', type: 'episode', embedding: [0.7, 0.3, 0], salience: 0.7, lastAccessed: new Date(), accessCount: 1, data: { summary: 'Stressed about March deadline' } })
-    graph.addNode({ id: 'team-issue', type: 'episode', embedding: [0.5, 0.5, 0], salience: 0.6, lastAccessed: new Date(), accessCount: 0, data: { summary: 'Frustration with deployment process' } })
-    graph.addNode({ id: 'unrelated', type: 'episode', embedding: [0, 0, 1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: { summary: 'Likes hiking' } })
+    graph.addNode({ id: 'work-project', type: 'episode', embedding: [0.9, 0.1, 0], salience: 0.8, created: new Date(), lastAccessed: new Date(), accessCount: 3, data: { summary: 'Working on fintech platform' } })
+    graph.addNode({ id: 'deadline-stress', type: 'episode', embedding: [0.7, 0.3, 0], salience: 0.7, created: new Date(), lastAccessed: new Date(), accessCount: 1, data: { summary: 'Stressed about March deadline' } })
+    graph.addNode({ id: 'team-issue', type: 'episode', embedding: [0.5, 0.5, 0], salience: 0.6, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: { summary: 'Frustration with deployment process' } })
+    graph.addNode({ id: 'unrelated', type: 'episode', embedding: [0, 0, 1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: { summary: 'Likes hiking' } })
 
     // Link the work-related memories
     graph.addLink('work-project', 'deadline-stress', 0.8, 'causal')

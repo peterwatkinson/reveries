@@ -23,12 +23,12 @@ describe('Graph Hydration', () => {
     const graph = new MemoryGraph()
     graph.addNode({
       id: 'ep-1', type: 'episode', embedding: [0.1, 0.2],
-      salience: 0.8, lastAccessed: new Date('2026-01-15T10:00:00Z'), accessCount: 3,
+      salience: 0.8, created: new Date('2026-01-15T10:00:00Z'), lastAccessed: new Date('2026-01-15T10:00:00Z'), accessCount: 3,
       data: { summary: 'test episode', topics: ['testing'], confidence: 0.9, exemplars: [], before: [], after: [], gap: { duration: 0, significance: null } }
     })
     graph.addNode({
       id: 'ep-2', type: 'episode', embedding: [0.3, 0.4],
-      salience: 0.6, lastAccessed: new Date('2026-01-16T10:00:00Z'), accessCount: 1,
+      salience: 0.6, created: new Date('2026-01-16T10:00:00Z'), lastAccessed: new Date('2026-01-16T10:00:00Z'), accessCount: 1,
       data: { summary: 'test 2', topics: [], confidence: 0.7, exemplars: [], before: [], after: [], gap: { duration: 0, significance: null } }
     })
     graph.addLink('ep-1', 'ep-2', 0.7, 'thematic')
@@ -57,7 +57,7 @@ describe('Graph Hydration', () => {
     const graph = new MemoryGraph()
     graph.addNode({
       id: 'ep-1', type: 'episode', embedding: [0.1, 0.2],
-      salience: 0.8, lastAccessed: new Date(), accessCount: 0,
+      salience: 0.8, created: new Date(), lastAccessed: new Date(), accessCount: 0,
       data: { summary: 'original', topics: [], confidence: 0.5, exemplars: [], before: [], after: [], gap: { duration: 0, significance: null } }
     })
     persistGraph(graph, db)

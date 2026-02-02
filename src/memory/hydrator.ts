@@ -13,6 +13,7 @@ export function hydrateGraph(db: Database): MemoryGraph {
       type: 'episode',
       embedding: ep.embedding,
       salience: ep.salience,
+      created: ep.created,
       lastAccessed: ep.lastAccessed,
       accessCount: ep.accessCount,
       data: {
@@ -41,7 +42,7 @@ export function persistGraph(graph: MemoryGraph, db: Database): void {
   for (const node of nodes) {
     const episode: Episode = {
       id: node.id,
-      created: node.lastAccessed,
+      created: node.created,
       lastAccessed: node.lastAccessed,
       accessCount: node.accessCount,
       summary: (node.data.summary as string) ?? '',

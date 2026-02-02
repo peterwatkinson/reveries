@@ -14,6 +14,7 @@ describe('MemoryGraph', () => {
       type: 'episode',
       embedding: [1, 0, 0],
       salience: 0.8,
+      created: new Date(),
       lastAccessed: new Date(),
       accessCount: 0,
       data: { summary: 'test episode' }
@@ -29,8 +30,8 @@ describe('MemoryGraph', () => {
   })
 
   it('adds and retrieves links', () => {
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
     graph.addLink('a', 'b', 0.8, 'thematic')
 
     const links = graph.getLinks('a')
@@ -41,14 +42,14 @@ describe('MemoryGraph', () => {
   })
 
   it('returns empty array for nodes with no links', () => {
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
     expect(graph.getLinks('a')).toEqual([])
   })
 
   it('finds nearest nodes by embedding (cosine similarity)', () => {
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0, 0], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1, 0], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'c', type: 'episode', embedding: [0.9, 0.1, 0], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0, 0], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1, 0], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'c', type: 'episode', embedding: [0.9, 0.1, 0], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
 
     const nearest = graph.findNearestNodes([1, 0, 0], 2)
     expect(nearest).toHaveLength(2)
@@ -58,9 +59,9 @@ describe('MemoryGraph', () => {
 
   it('performs spreading activation through a chain', () => {
     // A -> B -> C chain
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.8, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0.5, 0.5], salience: 0.6, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'c', type: 'episode', embedding: [0, 1], salience: 0.7, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.8, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0.5, 0.5], salience: 0.6, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'c', type: 'episode', embedding: [0, 1], salience: 0.7, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
 
     graph.addLink('a', 'b', 0.9, 'causal')
     graph.addLink('b', 'c', 0.8, 'causal')
@@ -83,9 +84,9 @@ describe('MemoryGraph', () => {
 
   it('accumulates activation from multiple paths', () => {
     // A -> C and B -> C (C reached from two sources)
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'c', type: 'episode', embedding: [0.5, 0.5], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'c', type: 'episode', embedding: [0.5, 0.5], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
 
     graph.addLink('a', 'c', 0.8, 'thematic')
     graph.addLink('b', 'c', 0.7, 'thematic')
@@ -104,7 +105,7 @@ describe('MemoryGraph', () => {
 
   it('reinforces nodes on access', () => {
     const oldDate = new Date('2026-01-01')
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, lastAccessed: oldDate, accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, created: oldDate, lastAccessed: oldDate, accessCount: 0, data: {} })
 
     graph.reinforceNode('a')
 
@@ -116,10 +117,10 @@ describe('MemoryGraph', () => {
   it('applies decay based on time since last access', () => {
     // Node accessed 90 days ago (3 half-lives with halfLife=30)
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    graph.addNode({ id: 'old', type: 'episode', embedding: [1], salience: 0.8, lastAccessed: ninetyDaysAgo, accessCount: 0, data: {} })
+    graph.addNode({ id: 'old', type: 'episode', embedding: [1], salience: 0.8, created: ninetyDaysAgo, lastAccessed: ninetyDaysAgo, accessCount: 0, data: {} })
 
     // Node accessed just now
-    graph.addNode({ id: 'recent', type: 'episode', embedding: [0, 1], salience: 0.8, lastAccessed: new Date(), accessCount: 5, data: {} })
+    graph.addNode({ id: 'recent', type: 'episode', embedding: [0, 1], salience: 0.8, created: new Date(), lastAccessed: new Date(), accessCount: 5, data: {} })
 
     graph.applyDecay({ halfLifeDays: 30, minimumSalience: 0.1 })
 
@@ -135,7 +136,7 @@ describe('MemoryGraph', () => {
 
   it('respects minimum salience floor during decay', () => {
     const veryOld = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
-    graph.addNode({ id: 'ancient', type: 'episode', embedding: [1], salience: 0.5, lastAccessed: veryOld, accessCount: 0, data: {} })
+    graph.addNode({ id: 'ancient', type: 'episode', embedding: [1], salience: 0.5, created: veryOld, lastAccessed: veryOld, accessCount: 0, data: {} })
 
     graph.applyDecay({ halfLifeDays: 30, minimumSalience: 0.05 })
 
@@ -146,8 +147,8 @@ describe('MemoryGraph', () => {
 
   it('also decays link strengths', () => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.8, lastAccessed: thirtyDaysAgo, accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.8, lastAccessed: thirtyDaysAgo, accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1, 0], salience: 0.8, created: thirtyDaysAgo, lastAccessed: thirtyDaysAgo, accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.8, created: thirtyDaysAgo, lastAccessed: thirtyDaysAgo, accessCount: 0, data: {} })
     graph.addLink('a', 'b', 0.8, 'thematic')
 
     graph.applyDecay({ halfLifeDays: 30, minimumSalience: 0.1 })
@@ -159,8 +160,8 @@ describe('MemoryGraph', () => {
   })
 
   it('reports node and link counts', () => {
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
     graph.addLink('a', 'b', 0.5, 'thematic')
 
     expect(graph.nodeCount).toBe(2)
@@ -168,8 +169,8 @@ describe('MemoryGraph', () => {
   })
 
   it('gets all nodes', () => {
-    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
-    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'a', type: 'episode', embedding: [1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
+    graph.addNode({ id: 'b', type: 'episode', embedding: [0, 1], salience: 0.5, created: new Date(), lastAccessed: new Date(), accessCount: 0, data: {} })
 
     const nodes = graph.getAllNodes()
     expect(nodes).toHaveLength(2)

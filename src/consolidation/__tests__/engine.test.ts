@@ -94,6 +94,7 @@ describe('ConsolidationEngine', () => {
       type: 'episode',
       embedding: [1, 0],
       salience: 0.8,
+      created: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
       lastAccessed: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), // 60 days ago
       accessCount: 0,
       data: { summary: 'old memory' }

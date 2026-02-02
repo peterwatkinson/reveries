@@ -7,12 +7,12 @@ describe('Context Assembly', () => {
   const mockMemories: GraphNode[] = [
     {
       id: 'ep-1', type: 'episode', embedding: [1, 0], salience: 0.9,
-      lastAccessed: new Date(), accessCount: 5,
+      created: new Date(), lastAccessed: new Date(), accessCount: 5,
       data: { summary: 'User works on a fintech platform and prefers TypeScript' }
     },
     {
       id: 'ep-2', type: 'episode', embedding: [0, 1], salience: 0.7,
-      lastAccessed: new Date(), accessCount: 2,
+      created: new Date(), lastAccessed: new Date(), accessCount: 2,
       data: { summary: 'User was stressed about a March 15 deadline' }
     }
   ]
