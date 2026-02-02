@@ -1,19 +1,19 @@
 export type DaemonRequest =
-  | { type: 'chat'; message: string; conversationId: string }
-  | { type: 'status' }
-  | { type: 'consolidate' }
-  | { type: 'monologue-stream' }
-  | { type: 'memory-stats' }
-  | { type: 'memory-search'; query: string }
-  | { type: 'shutdown' }
+  | { type: 'chat'; message: string; conversationId: string; requestId?: string }
+  | { type: 'status'; requestId?: string }
+  | { type: 'consolidate'; requestId?: string }
+  | { type: 'monologue-stream'; requestId?: string }
+  | { type: 'memory-stats'; requestId?: string }
+  | { type: 'memory-search'; query: string; requestId?: string }
+  | { type: 'shutdown'; requestId?: string }
 
 export type DaemonResponse =
-  | { type: 'chat-chunk'; content: string }
-  | { type: 'chat-done' }
-  | { type: 'status'; data: DaemonStatus }
-  | { type: 'monologue-chunk'; content: string }
-  | { type: 'error'; message: string }
-  | { type: 'ok'; data?: unknown }
+  | { type: 'chat-chunk'; content: string; requestId?: string }
+  | { type: 'chat-done'; requestId?: string }
+  | { type: 'status'; data: DaemonStatus; requestId?: string }
+  | { type: 'monologue-chunk'; content: string; requestId?: string }
+  | { type: 'error'; message: string; requestId?: string }
+  | { type: 'ok'; data?: unknown; requestId?: string }
 
 export interface DaemonStatus {
   uptime: number

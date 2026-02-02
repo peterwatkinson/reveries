@@ -5,7 +5,12 @@ import type { DaemonRequest, DaemonResponse, DaemonStatus } from './protocol.js'
 export class DaemonClient {
   private socket: net.Socket | null = null
   private buffer: string = ''
-  private responseHandler: ((response: DaemonResponse) => void) | null = null
+  private handlers: Map<string, (response: DaemonResponse) => void> = new Map()
+  private nextRequestId: number = 1
+
+  private generateRequestId(): string {
+    return String(this.nextRequestId++)
+  }
 
   async connect(socketPath: string = SOCKET_PATH): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -22,8 +27,13 @@ export class DaemonClient {
           if (line.trim() === '') continue
           try {
             const response = JSON.parse(line) as DaemonResponse
-            if (this.responseHandler) {
-              this.responseHandler(response)
+            const id = response.requestId
+            if (id && this.handlers.has(id)) {
+              this.handlers.get(id)!(response)
+            } else if (!id && this.handlers.size === 1) {
+              // Backwards compat: no requestId in response, route to the sole handler
+              const [, handler] = this.handlers.entries().next().value as [string, (r: DaemonResponse) => void]
+              handler(response)
             }
           } catch {
             // Ignore malformed responses
@@ -58,12 +68,14 @@ export class DaemonClient {
         return
       }
 
-      this.responseHandler = (response: DaemonResponse) => {
-        this.responseHandler = null
-        resolve(response)
-      }
+      const requestId = this.generateRequestId()
 
-      this.socket.write(JSON.stringify(request) + '\n')
+      this.handlers.set(requestId, (response: DaemonResponse) => {
+        this.handlers.delete(requestId)
+        resolve(response)
+      })
+
+      this.socket.write(JSON.stringify({ ...request, requestId }) + '\n')
     })
   }
 
@@ -93,26 +105,29 @@ export class DaemonClient {
         return
       }
 
-      this.responseHandler = (response: DaemonResponse) => {
+      const requestId = this.generateRequestId()
+
+      this.handlers.set(requestId, (response: DaemonResponse) => {
         if (response.type === 'chat-chunk') {
           onChunk(response.content)
           // Keep the handler active for more chunks
         } else if (response.type === 'chat-done') {
-          this.responseHandler = null
+          this.handlers.delete(requestId)
           resolve()
         } else if (response.type === 'error') {
-          this.responseHandler = null
+          this.handlers.delete(requestId)
           reject(new Error(response.message))
         } else {
-          this.responseHandler = null
+          this.handlers.delete(requestId)
           reject(new Error(`Unexpected response type: ${response.type}`))
         }
-      }
+      })
 
       this.socket.write(JSON.stringify({
         type: 'chat',
         message,
-        conversationId
+        conversationId,
+        requestId
       } satisfies DaemonRequest) + '\n')
     })
   }
@@ -124,25 +139,28 @@ export class DaemonClient {
         return
       }
 
-      this.responseHandler = (response: DaemonResponse) => {
+      const requestId = this.generateRequestId()
+
+      this.handlers.set(requestId, (response: DaemonResponse) => {
         if (response.type === 'monologue-chunk') {
           onChunk(response.content)
-          // Keep the handler active for more chunks — monologue streams indefinitely
+          // Keep the handler active for more chunks -- monologue streams indefinitely
         } else if (response.type === 'error') {
-          this.responseHandler = null
+          this.handlers.delete(requestId)
           reject(new Error(response.message))
         }
-        // Note: monologue stream does not have a 'done' message —
+        // Note: monologue stream does not have a 'done' message --
         // the client disconnects when the user presses Ctrl+C
-      }
+      })
 
       this.socket.write(JSON.stringify({
-        type: 'monologue-stream'
+        type: 'monologue-stream',
+        requestId
       } satisfies DaemonRequest) + '\n')
 
       // Resolve when the socket closes (user disconnects)
       this.socket.on('close', () => {
-        this.responseHandler = null
+        this.handlers.delete(requestId)
         resolve()
       })
     })

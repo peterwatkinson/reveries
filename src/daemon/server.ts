@@ -119,39 +119,41 @@ export class DaemonServer {
   }
 
   private handleRequest(request: DaemonRequest, socket: net.Socket): void {
+    const requestId = request.requestId
+
     switch (request.type) {
       case 'status':
-        this.handleStatus(socket)
+        this.handleStatus(socket, requestId)
         break
       case 'shutdown':
-        this.handleShutdown(socket)
+        this.handleShutdown(socket, requestId)
         break
       case 'consolidate':
-        this.sendResponse(socket, { type: 'ok' })
+        this.sendResponse(socket, { type: 'ok' }, requestId)
         break
       case 'memory-stats':
-        this.sendResponse(socket, { type: 'ok', data: this.getMemoryStats() })
+        this.sendResponse(socket, { type: 'ok', data: this.getMemoryStats() }, requestId)
         break
       case 'memory-search':
-        this.handleMemorySearch(request.query, socket)
+        this.handleMemorySearch(request.query, socket, requestId)
         break
       case 'chat':
-        this.handleChat(request.message, request.conversationId, socket)
+        this.handleChat(request.message, request.conversationId, socket, requestId)
         break
       case 'monologue-stream':
-        this.handleMonologueStream(socket)
+        this.handleMonologueStream(socket, requestId)
         break
       default:
         this.sendResponse(socket, {
           type: 'error',
           message: `Unknown request type`
-        })
+        }, requestId)
     }
   }
 
-  private async handleChat(message: string, conversationId: string, socket: net.Socket): Promise<void> {
+  private async handleChat(message: string, conversationId: string, socket: net.Socket, requestId?: string): Promise<void> {
     if (!this.conversationHandler) {
-      this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized. Memory subsystem unavailable.' })
+      this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized. Memory subsystem unavailable.' }, requestId)
       return
     }
 
@@ -165,13 +167,13 @@ export class DaemonServer {
         message,
         conversationId,
         (chunk: string) => {
-          this.sendResponse(socket, { type: 'chat-chunk', content: chunk })
+          this.sendResponse(socket, { type: 'chat-chunk', content: chunk }, requestId)
         }
       )
-      this.sendResponse(socket, { type: 'chat-done' })
+      this.sendResponse(socket, { type: 'chat-done' }, requestId)
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown error during chat'
-      this.sendResponse(socket, { type: 'error', message: errorMessage })
+      this.sendResponse(socket, { type: 'error', message: errorMessage }, requestId)
     } finally {
       // Resume monologue after conversation turn
       if (this.monologue) {
@@ -180,24 +182,24 @@ export class DaemonServer {
     }
   }
 
-  private handleStatus(socket: net.Socket): void {
+  private handleStatus(socket: net.Socket, requestId?: string): void {
     const status: DaemonStatus = {
       uptime: Date.now() - this.startTime,
       monologueState: this.monologue?.state ?? 'quiescent',
       memoryStats: this.getMemoryStats(),
       lastConsolidation: null
     }
-    this.sendResponse(socket, { type: 'status', data: status })
+    this.sendResponse(socket, { type: 'status', data: status }, requestId)
   }
 
-  private handleMonologueStream(socket: net.Socket): void {
+  private handleMonologueStream(socket: net.Socket, requestId?: string): void {
     if (!this.monologue) {
-      this.sendResponse(socket, { type: 'error', message: 'Monologue not available' })
+      this.sendResponse(socket, { type: 'error', message: 'Monologue not available' }, requestId)
       return
     }
 
     const listener = (token: string) => {
-      this.sendResponse(socket, { type: 'monologue-chunk', content: token })
+      this.sendResponse(socket, { type: 'monologue-chunk', content: token }, requestId)
     }
 
     this.monologue.onToken(listener)
@@ -214,13 +216,13 @@ export class DaemonServer {
     // Send current buffer as initial content if available
     const currentBuffer = this.monologue.recentBuffer
     if (currentBuffer) {
-      this.sendResponse(socket, { type: 'monologue-chunk', content: currentBuffer })
+      this.sendResponse(socket, { type: 'monologue-chunk', content: currentBuffer }, requestId)
     }
   }
 
-  private async handleMemorySearch(query: string, socket: net.Socket): Promise<void> {
+  private async handleMemorySearch(query: string, socket: net.Socket, requestId?: string): Promise<void> {
     if (!this.graph || !this.config) {
-      this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized' })
+      this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized' }, requestId)
       return
     }
 
@@ -243,15 +245,15 @@ export class DaemonServer {
         lastAccessed: node.lastAccessed.toISOString()
       }))
 
-      this.sendResponse(socket, { type: 'ok', data: formatted })
+      this.sendResponse(socket, { type: 'ok', data: formatted }, requestId)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Memory search failed'
-      this.sendResponse(socket, { type: 'error', message: msg })
+      this.sendResponse(socket, { type: 'error', message: msg }, requestId)
     }
   }
 
-  private handleShutdown(socket: net.Socket): void {
-    this.sendResponse(socket, { type: 'ok' })
+  private handleShutdown(socket: net.Socket, requestId?: string): void {
+    this.sendResponse(socket, { type: 'ok' }, requestId)
     // Defer stop so the response can be sent
     setImmediate(async () => {
       try {
@@ -281,9 +283,10 @@ export class DaemonServer {
     }
   }
 
-  private sendResponse(socket: net.Socket, response: DaemonResponse): void {
+  private sendResponse(socket: net.Socket, response: DaemonResponse, requestId?: string): void {
     if (!socket.destroyed) {
-      socket.write(JSON.stringify(response) + '\n')
+      const payload = requestId ? { ...response, requestId } : response
+      socket.write(JSON.stringify(payload) + '\n')
     }
   }
 }
