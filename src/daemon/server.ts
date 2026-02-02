@@ -2,11 +2,35 @@ import net from 'node:net'
 import { unlinkSync, existsSync } from 'node:fs'
 import { SOCKET_PATH } from './protocol.js'
 import type { DaemonRequest, DaemonResponse, DaemonStatus } from './protocol.js'
+import { ConversationHandler } from './conversation.js'
+import type { MemoryGraph } from '../memory/graph.js'
+import type { Database } from '../storage/database.js'
+import type { SelfModel } from '../memory/types.js'
+import type { ReveriesConfig } from '../config.js'
 
 export class DaemonServer {
   private server: net.Server | null = null
   private connections: Set<net.Socket> = new Set()
   private startTime: number = 0
+  private conversationHandler: ConversationHandler | null = null
+  private graph: MemoryGraph | null = null
+  private db: Database | null = null
+
+  init(params: {
+    graph: MemoryGraph
+    db: Database
+    selfModel: SelfModel | null
+    config: ReveriesConfig
+  }): void {
+    this.graph = params.graph
+    this.db = params.db
+    this.conversationHandler = new ConversationHandler({
+      graph: params.graph,
+      db: params.db,
+      selfModel: params.selfModel,
+      config: params.config
+    })
+  }
 
   async start(socketPath: string = SOCKET_PATH): Promise<void> {
     if (existsSync(socketPath)) {
@@ -98,9 +122,7 @@ export class DaemonServer {
         this.sendResponse(socket, { type: 'ok', data: [] })
         break
       case 'chat':
-        // Placeholder: echo back and done
-        this.sendResponse(socket, { type: 'chat-chunk', content: '' })
-        this.sendResponse(socket, { type: 'chat-done' })
+        this.handleChat(request.message, request.conversationId, socket)
         break
       case 'monologue-stream':
         this.sendResponse(socket, { type: 'ok' })
@@ -110,6 +132,27 @@ export class DaemonServer {
           type: 'error',
           message: `Unknown request type`
         })
+    }
+  }
+
+  private async handleChat(message: string, conversationId: string, socket: net.Socket): Promise<void> {
+    if (!this.conversationHandler) {
+      this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized. Memory subsystem unavailable.' })
+      return
+    }
+
+    try {
+      await this.conversationHandler.handleMessage(
+        message,
+        conversationId,
+        (chunk: string) => {
+          this.sendResponse(socket, { type: 'chat-chunk', content: chunk })
+        }
+      )
+      this.sendResponse(socket, { type: 'chat-done' })
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error during chat'
+      this.sendResponse(socket, { type: 'error', message: errorMessage })
     }
   }
 
@@ -136,8 +179,8 @@ export class DaemonServer {
   private getMemoryStats() {
     return {
       rawBufferCount: 0,
-      episodeCount: 0,
-      linkCount: 0
+      episodeCount: this.graph?.nodeCount ?? 0,
+      linkCount: this.graph?.linkCount ?? 0
     }
   }
 

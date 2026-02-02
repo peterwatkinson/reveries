@@ -1,11 +1,28 @@
 import { DaemonServer } from './server.js'
-import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
+import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import path from 'node:path'
+import { Database } from '../storage/database.js'
+import { hydrateGraph } from '../memory/hydrator.js'
+import { loadConfig } from '../config.js'
 
 const PID_FILE = '/tmp/reveries.pid'
 
 const server = new DaemonServer()
 
 async function main(): Promise<void> {
+  // Initialize memory subsystem
+  const config = loadConfig()
+  const dbPath = config.storage.dbPath.replace('~', homedir())
+  const dbDir = path.dirname(dbPath)
+  mkdirSync(dbDir, { recursive: true })
+
+  const db = new Database(dbPath)
+  const graph = hydrateGraph(db)
+  const selfModel = db.loadSelfModel()
+
+  server.init({ graph, db, selfModel, config })
+
   await server.start()
   writeFileSync(PID_FILE, process.pid.toString())
 }
