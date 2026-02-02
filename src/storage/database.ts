@@ -180,6 +180,43 @@ export class Database {
     return rows.map(row => this.deserializeEpisode(row))
   }
 
+  upsertEpisode(ep: Episode): void {
+    this.db.prepare(`
+      INSERT INTO episodes (id, created, last_accessed, access_count, summary, embedding, exemplars, temporal_before, temporal_after, gap, salience, confidence, topics)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        last_accessed = excluded.last_accessed,
+        access_count = excluded.access_count,
+        summary = excluded.summary,
+        embedding = excluded.embedding,
+        exemplars = excluded.exemplars,
+        temporal_before = excluded.temporal_before,
+        temporal_after = excluded.temporal_after,
+        gap = excluded.gap,
+        salience = excluded.salience,
+        confidence = excluded.confidence,
+        topics = excluded.topics
+    `).run(
+      ep.id,
+      ep.created.toISOString(),
+      ep.lastAccessed.toISOString(),
+      ep.accessCount,
+      ep.summary,
+      JSON.stringify(ep.embedding),
+      JSON.stringify(ep.exemplars),
+      JSON.stringify(ep.before),
+      JSON.stringify(ep.after),
+      JSON.stringify(ep.gap),
+      ep.salience,
+      ep.confidence,
+      JSON.stringify(ep.topics)
+    )
+  }
+
+  deleteEpisodeLinks(fromId: string): void {
+    this.db.prepare('DELETE FROM episode_links WHERE from_id = ?').run(fromId)
+  }
+
   updateEpisodeSalience(id: string, salience: number): void {
     this.db.prepare('UPDATE episodes SET salience = ? WHERE id = ?').run(salience, id)
   }
