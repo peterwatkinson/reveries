@@ -1,10 +1,11 @@
 {
   "name": "reveries",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "description": "Continuous AI memory and inner monologue system",
   "type": "module",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
+  "main": "dist/index.js",
+  "bin": {
+    "reveries": "./dist/index.js"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
@@ -12,10 +13,8 @@
     "start": "node dist/index.js",
     "test": "vitest run"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": ["ai", "memory", "episodic", "monologue", "llm"],
+  "license": "MIT",
   "dependencies": {
     "@ai-sdk/openai": "^3.0.25",
     "@types/better-sqlite3": "^7.6.13",

@@ -11,6 +11,6 @@ export function createLLMProvider(config: ReveriesConfig['llm']) {
   return createOpenAI({
     apiKey: config.apiKey || process.env.CEREBRAS_API_KEY || process.env.OPENAI_API_KEY,
     baseURL: config.baseUrl || 'https://api.cerebras.ai/v1',
-    compatibility: 'compatible'
+    name: config.provider
   })
 }
