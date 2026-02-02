@@ -1,1 +1,2 @@
-export {} // TODO: LLM provider abstraction
+export { createLLMProvider } from './llm.js'
+export { generateEmbedding } from './embeddings.js'
