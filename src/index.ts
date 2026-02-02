@@ -52,9 +52,11 @@ program
 
 program
   .command('memory')
-  .description('Show memory statistics')
-  .action(async () => {
-    await memoryCommand()
+  .description('Show memory statistics, search, or inspect episodes')
+  .option('--search <query>', 'Search memory by query')
+  .option('--inspect <id>', 'Inspect a specific episode by ID')
+  .action(async (options: { search?: string; inspect?: string }) => {
+    await memoryCommand(options)
   })
 
 program

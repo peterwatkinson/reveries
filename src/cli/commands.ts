@@ -119,7 +119,22 @@ export async function consolidateCommand(): Promise<void> {
   }
 }
 
-export async function memoryCommand(): Promise<void> {
+export async function memoryCommand(options: { search?: string; inspect?: string }): Promise<void> {
+  if (options.search) {
+    await memorySearchCommand(options.search)
+    return
+  }
+
+  if (options.inspect) {
+    await memoryInspectCommand(options.inspect)
+    return
+  }
+
+  // Default: show stats
+  await memoryStatsCommand()
+}
+
+async function memoryStatsCommand(): Promise<void> {
   const client = new DaemonClient()
   try {
     await client.connect()
@@ -143,6 +158,100 @@ export async function memoryCommand(): Promise<void> {
     }
   } catch {
     console.log('Daemon is not running. Run \'reveries wake\' first.')
+  }
+}
+
+async function memorySearchCommand(query: string): Promise<void> {
+  const client = new DaemonClient()
+  try {
+    await client.connect()
+    const response = await client.send({ type: 'memory-search', query })
+    await client.disconnect()
+    if (response.type === 'ok') {
+      const results = response.data as {
+        id: string
+        summary: string
+        topics: string[]
+        salience: number
+        accessCount: number
+        lastAccessed: string
+      }[]
+
+      if (results.length === 0) {
+        console.log('No results found.')
+        return
+      }
+
+      console.log(`\n  Found ${results.length} result(s):\n`)
+      for (const result of results) {
+        console.log(`  [${result.id}]`)
+        console.log(`    Summary:      ${result.summary}`)
+        console.log(`    Topics:       ${result.topics.join(', ')}`)
+        console.log(`    Salience:     ${result.salience.toFixed(3)}`)
+        console.log(`    Accessed:     ${result.accessCount} times`)
+        console.log(`    Last access:  ${result.lastAccessed}`)
+        console.log('')
+      }
+    } else if (response.type === 'error') {
+      console.log(`Error: ${response.message}`)
+    }
+  } catch {
+    console.log('Daemon is not running. Run \'reveries wake\' first.')
+  }
+}
+
+async function memoryInspectCommand(id: string): Promise<void> {
+  const config = loadConfig()
+  const dbPath = config.storage.dbPath.replace('~', homedir())
+
+  if (!existsSync(dbPath)) {
+    console.log('No database found. Run \'reveries wake\' first to initialize.')
+    return
+  }
+
+  const db = new Database(dbPath)
+  try {
+    const episode = db.getEpisode(id)
+    if (!episode) {
+      console.log(`Episode not found: ${id}`)
+      return
+    }
+
+    console.log('')
+    console.log(`  Episode: ${episode.id}`)
+    console.log('  ' + '-'.repeat(40))
+    console.log(`  Summary:     ${episode.summary}`)
+    console.log(`  Topics:      ${episode.topics.join(', ')}`)
+    console.log(`  Salience:    ${episode.salience.toFixed(3)}`)
+    console.log(`  Confidence:  ${episode.confidence.toFixed(3)}`)
+    console.log(`  Created:     ${episode.created.toISOString()}`)
+    console.log(`  Accessed:    ${episode.accessCount} times`)
+    console.log(`  Last access: ${episode.lastAccessed.toISOString()}`)
+
+    if (episode.exemplars.length > 0) {
+      console.log('\n  Exemplars:')
+      for (const ex of episode.exemplars) {
+        console.log(`    - "${ex.quote}" (${ex.context})`)
+      }
+    }
+
+    if (episode.links.length > 0) {
+      console.log('\n  Links:')
+      for (const link of episode.links) {
+        console.log(`    -> ${link.targetId} (${link.type}, strength: ${link.strength.toFixed(3)})`)
+      }
+    }
+
+    if (episode.before.length > 0) {
+      console.log(`\n  Before: ${episode.before.join(', ')}`)
+    }
+    if (episode.after.length > 0) {
+      console.log(`  After:  ${episode.after.join(', ')}`)
+    }
+
+    console.log('')
+  } finally {
+    db.close()
   }
 }
 

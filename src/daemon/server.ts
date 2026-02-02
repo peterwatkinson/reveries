@@ -3,6 +3,8 @@ import { unlinkSync, existsSync } from 'node:fs'
 import { SOCKET_PATH } from './protocol.js'
 import type { DaemonRequest, DaemonResponse, DaemonStatus } from './protocol.js'
 import { ConversationHandler } from './conversation.js'
+import { retrieve } from '../memory/retrieval.js'
+import { generateEmbedding } from '../providers/embeddings.js'
 import type { MemoryGraph } from '../memory/graph.js'
 import type { Database } from '../storage/database.js'
 import type { SelfModel } from '../memory/types.js'
@@ -16,6 +18,7 @@ export class DaemonServer {
   private conversationHandler: ConversationHandler | null = null
   private graph: MemoryGraph | null = null
   private db: Database | null = null
+  private config: ReveriesConfig | null = null
   private monologue: MonologueManager | null = null
 
   init(params: {
@@ -26,6 +29,7 @@ export class DaemonServer {
   }): void {
     this.graph = params.graph
     this.db = params.db
+    this.config = params.config
     this.conversationHandler = new ConversationHandler({
       graph: params.graph,
       db: params.db,
@@ -129,7 +133,7 @@ export class DaemonServer {
         this.sendResponse(socket, { type: 'ok', data: this.getMemoryStats() })
         break
       case 'memory-search':
-        this.sendResponse(socket, { type: 'ok', data: [] })
+        this.handleMemorySearch(request.query, socket)
         break
       case 'chat':
         this.handleChat(request.message, request.conversationId, socket)
@@ -214,6 +218,38 @@ export class DaemonServer {
     }
   }
 
+  private async handleMemorySearch(query: string, socket: net.Socket): Promise<void> {
+    if (!this.graph || !this.config) {
+      this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized' })
+      return
+    }
+
+    try {
+      const queryEmbedding = await generateEmbedding(query, this.config.llm.embeddingModel)
+      const results = retrieve(this.graph, {
+        queryEmbedding,
+        limit: 10,
+        maxHops: 2,
+        decayPerHop: 0.5,
+        activationThreshold: 0.01
+      })
+
+      const formatted = results.map(node => ({
+        id: node.id,
+        summary: node.data.summary as string,
+        topics: node.data.topics as string[],
+        salience: node.salience,
+        accessCount: node.accessCount,
+        lastAccessed: node.lastAccessed.toISOString()
+      }))
+
+      this.sendResponse(socket, { type: 'ok', data: formatted })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Memory search failed'
+      this.sendResponse(socket, { type: 'error', message: msg })
+    }
+  }
+
   private handleShutdown(socket: net.Socket): void {
     this.sendResponse(socket, { type: 'ok' })
     // Defer stop so the response can be sent
@@ -230,8 +266,16 @@ export class DaemonServer {
   }
 
   private getMemoryStats() {
+    let rawBufferCount = 0
+    if (this.db) {
+      try {
+        rawBufferCount = this.db.getRawExperiences({ processed: false }).length
+      } catch {
+        // Ignore errors reading raw buffer
+      }
+    }
     return {
-      rawBufferCount: 0,
+      rawBufferCount,
       episodeCount: this.graph?.nodeCount ?? 0,
       linkCount: this.graph?.linkCount ?? 0
     }
