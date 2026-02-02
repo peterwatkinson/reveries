@@ -1,4 +1,5 @@
 import { MemoryGraph, GraphNode } from './graph.js'
+import { cosineSimilarity } from './math.js'
 
 export interface RetrievalOptions {
   queryEmbedding: number[]
@@ -6,29 +7,6 @@ export interface RetrievalOptions {
   maxHops: number
   decayPerHop: number
   activationThreshold: number
-}
-
-function dotProduct(a: number[], b: number[]): number {
-  let sum = 0
-  for (let i = 0; i < a.length; i++) {
-    sum += a[i] * b[i]
-  }
-  return sum
-}
-
-function magnitude(v: number[]): number {
-  let sum = 0
-  for (let i = 0; i < v.length; i++) {
-    sum += v[i] * v[i]
-  }
-  return Math.sqrt(sum)
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  const magA = magnitude(a)
-  const magB = magnitude(b)
-  if (magA === 0 || magB === 0) return 0
-  return dotProduct(a, b) / (magA * magB)
 }
 
 export function retrieve(graph: MemoryGraph, options: RetrievalOptions): GraphNode[] {

@@ -1,3 +1,23 @@
+import { homedir } from 'node:os'
+import path from 'node:path'
+import { mkdirSync } from 'node:fs'
+
+const REVERIES_DIR = path.join(homedir(), '.reveries')
+
+function ensureReveriesDir(): void {
+  mkdirSync(REVERIES_DIR, { recursive: true })
+}
+
+export function getSocketPath(): string {
+  ensureReveriesDir()
+  return path.join(REVERIES_DIR, 'reveries.sock')
+}
+
+export function getPidPath(): string {
+  ensureReveriesDir()
+  return path.join(REVERIES_DIR, 'reveries.pid')
+}
+
 export type DaemonRequest =
   | { type: 'chat'; message: string; conversationId: string; requestId?: string }
   | { type: 'status'; requestId?: string }
@@ -26,4 +46,4 @@ export interface DaemonStatus {
   lastConsolidation: string | null
 }
 
-export const SOCKET_PATH = '/tmp/reveries.sock'
+export const SOCKET_PATH = getSocketPath()

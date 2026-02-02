@@ -116,7 +116,7 @@ export class Database {
     )
   }
 
-  getRawExperiences(filter: { processed?: boolean }): RawExperience[] {
+  getRawExperiences(filter: { processed?: boolean; limit?: number }): RawExperience[] {
     let sql = 'SELECT * FROM raw_experiences'
     const params: unknown[] = []
 
@@ -124,6 +124,12 @@ export class Database {
       sql += ' WHERE processed = ?'
       params.push(filter.processed ? 1 : 0)
     }
+
+    sql += ' ORDER BY timestamp DESC'
+
+    const limit = filter.limit ?? 1000
+    sql += ' LIMIT ?'
+    params.push(limit)
 
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[]
     return rows.map(row => this.deserializeRawExperience(row))

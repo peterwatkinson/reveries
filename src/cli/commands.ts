@@ -7,8 +7,9 @@ import { DaemonClient } from '../daemon/client.js'
 import { Database } from '../storage/database.js'
 import { loadConfig, saveConfig } from '../config.js'
 import { startChat } from './chat.js'
+import { getPidPath } from '../daemon/protocol.js'
 
-const PID_FILE = '/tmp/reveries.pid'
+const PID_FILE = getPidPath()
 
 function formatUptime(ms: number): string {
   const seconds = Math.floor(ms / 1000)

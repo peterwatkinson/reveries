@@ -1,8 +1,9 @@
 import { DaemonServer } from './server.js'
 import { DaemonLifecycle } from './lifecycle.js'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
+import { getPidPath } from './protocol.js'
 
-const PID_FILE = '/tmp/reveries.pid'
+const PID_FILE = getPidPath()
 
 async function main(): Promise<void> {
   const lifecycle = new DaemonLifecycle()

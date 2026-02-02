@@ -3,21 +3,7 @@ import { Database } from '../storage/database.js'
 import { MemoryGraph, DecayOptions } from '../memory/graph.js'
 import { SelfModel } from '../memory/types.js'
 import { persistGraph } from '../memory/hydrator.js'
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0
-  let magA = 0
-  let magB = 0
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i]
-    magA += a[i] * a[i]
-    magB += b[i] * b[i]
-  }
-  magA = Math.sqrt(magA)
-  magB = Math.sqrt(magB)
-  if (magA === 0 || magB === 0) return 0
-  return dot / (magA * magB)
-}
+import { cosineSimilarity } from '../memory/math.js'
 
 interface ConsolidationResult {
   episodes: {
