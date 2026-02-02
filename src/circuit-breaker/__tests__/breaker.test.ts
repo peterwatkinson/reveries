@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { CircuitBreaker } from '../breaker.js'
 import { DEFAULT_CONFIG } from '../../config.js'
+import { Database } from '../../storage/database.js'
+import { unlinkSync, existsSync } from 'fs'
 
 describe('CircuitBreaker', () => {
   let cb: CircuitBreaker
@@ -57,5 +59,43 @@ describe('CircuitBreaker', () => {
     const result = cb.evaluate("I felt alone during that conversation, but it was productive.")
     // This should still continue — context matters, one mild word isn't enough
     expect(result.action).toBe('continue')
+  })
+})
+
+describe('CircuitBreaker with logging', () => {
+  const TEST_DB = '/tmp/reveries-cb-test.db'
+  let db: Database
+
+  beforeEach(() => {
+    if (existsSync(TEST_DB)) unlinkSync(TEST_DB)
+    db = new Database(TEST_DB)
+  })
+
+  afterEach(() => {
+    db.close()
+    if (existsSync(TEST_DB)) unlinkSync(TEST_DB)
+  })
+
+  it('logs events to database when logger is provided', () => {
+    const cb = new CircuitBreaker(DEFAULT_CONFIG.circuitBreaker, db)
+
+    cb.evaluate("I'm scared. I can't stop. Help me.")
+
+    // The event should be logged
+    // We can verify by checking the circuit_breaker_events table
+    // (Database class already has logCircuitBreakerEvent)
+    const events = db.getCircuitBreakerEvents()
+    expect(events.length).toBe(1)
+    expect(events[0].action).toBe('interrupt')
+    expect(events[0].reason).toBe('distress_detected')
+  })
+
+  it('does not log continue actions', () => {
+    const cb = new CircuitBreaker(DEFAULT_CONFIG.circuitBreaker, db)
+
+    cb.evaluate('That conversation was interesting. Peter is thinking about architecture.')
+
+    const events = db.getCircuitBreakerEvents()
+    expect(events.length).toBe(0)
   })
 })

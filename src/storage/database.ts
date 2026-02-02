@@ -412,6 +412,18 @@ export class Database {
     )
   }
 
+  getCircuitBreakerEvents(): { timestamp: string; action: string; reason: string; severity: string; bufferSnapshot: string; responseTaken: string }[] {
+    const rows = this.db.prepare('SELECT * FROM circuit_breaker_events ORDER BY id').all() as Record<string, unknown>[]
+    return rows.map(row => ({
+      timestamp: row.timestamp as string,
+      action: row.action as string,
+      reason: row.reason as string,
+      severity: row.severity as string,
+      bufferSnapshot: row.buffer_snapshot as string,
+      responseTaken: row.response_taken as string
+    }))
+  }
+
   // --- Lifecycle ---
 
   close(): void {
