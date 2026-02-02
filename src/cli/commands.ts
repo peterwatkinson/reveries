@@ -5,7 +5,7 @@ import path from 'node:path'
 import { homedir } from 'node:os'
 import { DaemonClient } from '../daemon/client.js'
 import { Database } from '../storage/database.js'
-import { loadConfig } from '../config.js'
+import { loadConfig, saveConfig } from '../config.js'
 import { startChat } from './chat.js'
 
 const PID_FILE = '/tmp/reveries.pid'
@@ -337,4 +337,35 @@ async function monologueHistoryCommand(since?: string): Promise<void> {
   } finally {
     db.close()
   }
+}
+
+export async function configCommand(action?: string, key?: string, value?: string): Promise<void> {
+  if (!action) {
+    // Print current config
+    const config = loadConfig()
+    console.log(JSON.stringify(config, null, 2))
+    return
+  }
+
+  if (action === 'set' && key && value) {
+    // Set a config value using dot notation
+    const parts = key.split('.')
+    const obj: Record<string, unknown> = {}
+    let current: Record<string, unknown> = obj
+    for (let i = 0; i < parts.length - 1; i++) {
+      current[parts[i]] = {}
+      current = current[parts[i]] as Record<string, unknown>
+    }
+    // Try to parse as JSON (for numbers, booleans)
+    try {
+      current[parts[parts.length - 1]] = JSON.parse(value)
+    } catch {
+      current[parts[parts.length - 1]] = value
+    }
+    saveConfig(obj as Partial<import('../config.js').ReveriesConfig>)
+    console.log(`Set ${key} = ${value}`)
+    return
+  }
+
+  console.log('Usage: reveries config [set <key> <value>]')
 }

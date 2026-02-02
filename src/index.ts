@@ -8,7 +8,8 @@ import {
   defaultCommand,
   consolidateCommand,
   memoryCommand,
-  monologueCommand
+  monologueCommand,
+  configCommand
 } from './cli/commands.js'
 
 const program = new Command()
@@ -66,6 +67,16 @@ program
   .option('--since <timestamp>', 'Show history since timestamp (ISO format)')
   .action(async (options: { history?: boolean; since?: string }) => {
     await monologueCommand(options)
+  })
+
+program
+  .command('config')
+  .description('View or update configuration')
+  .argument('[action]', 'Action: set')
+  .argument('[key]', 'Config key (dot notation)')
+  .argument('[value]', 'Config value')
+  .action(async (action?: string, key?: string, value?: string) => {
+    await configCommand(action, key, value)
   })
 
 program.parseAsync(process.argv).catch((err) => {

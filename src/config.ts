@@ -1,3 +1,7 @@
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import path from 'node:path'
+
 export interface ReveriesConfig {
   llm: {
     conversationModel: string
@@ -69,7 +73,65 @@ export const DEFAULT_CONFIG: ReveriesConfig = {
   }
 }
 
+const CONFIG_DIR = path.join(homedir(), '.reveries')
+const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json')
+
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...target }
+  for (const key of Object.keys(source)) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      result[key] = deepMerge(
+        (target[key] as Record<string, unknown>) || {},
+        source[key] as Record<string, unknown>
+      )
+    } else {
+      result[key] = source[key]
+    }
+  }
+  return result
+}
+
 export function loadConfig(): ReveriesConfig {
-  // TODO: load from ~/.reveries/config.json, merge with defaults
-  return DEFAULT_CONFIG
+  let fileConfig: Record<string, unknown> = {}
+
+  if (existsSync(CONFIG_PATH)) {
+    try {
+      const raw = readFileSync(CONFIG_PATH, 'utf-8')
+      fileConfig = JSON.parse(raw)
+    } catch (e) {
+      console.error('Failed to load config:', e)
+    }
+  }
+
+  const merged = deepMerge(
+    DEFAULT_CONFIG as unknown as Record<string, unknown>,
+    fileConfig
+  ) as unknown as ReveriesConfig
+
+  // Override with environment variables
+  if (process.env.CEREBRAS_API_KEY && !merged.llm.apiKey) {
+    merged.llm.apiKey = process.env.CEREBRAS_API_KEY
+  }
+  if (process.env.OPENAI_API_KEY && !merged.llm.apiKey) {
+    merged.llm.apiKey = process.env.OPENAI_API_KEY
+  }
+
+  return merged
+}
+
+export function saveConfig(config: Partial<ReveriesConfig>): void {
+  mkdirSync(CONFIG_DIR, { recursive: true })
+
+  // Load existing file config, merge with new values, save
+  let existing: Record<string, unknown> = {}
+  if (existsSync(CONFIG_PATH)) {
+    try {
+      existing = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'))
+    } catch {
+      // Start fresh if file is corrupt
+    }
+  }
+
+  const merged = deepMerge(existing, config as unknown as Record<string, unknown>)
+  writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2))
 }
