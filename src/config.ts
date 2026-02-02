@@ -40,9 +40,9 @@ export interface ReveriesConfig {
 
 export const DEFAULT_CONFIG: ReveriesConfig = {
   llm: {
-    conversationModel: 'kimi-k2.5',
-    monologueModel: 'gpt-oss',
-    consolidationModel: 'gpt-oss',
+    conversationModel: 'zai-glm-4.7',
+    monologueModel: 'gpt-oss-120b',
+    consolidationModel: 'gpt-oss-120b',
     embeddingModel: 'voyage-3',
     provider: 'cerebras',
     baseUrl: 'https://api.cerebras.ai/v1'

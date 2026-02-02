@@ -62,9 +62,12 @@ export class DaemonLifecycle {
           const model = provider(this.config.llm.consolidationModel)
           const { text } = await generateText({
             model,
-            prompt: buildAbstractionPrompt(experiences)
+            prompt: buildAbstractionPrompt(experiences),
+            maxOutputTokens: 4096
           })
-          return JSON.parse(text)
+          // Strip markdown code fences if present (LLMs often wrap JSON in ```json ... ```)
+          const cleaned = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+          return JSON.parse(cleaned)
         } catch (e) {
           console.error('Consolidation LLM call failed:', e)
           return { episodes: [], selfModelUpdates: { currentFocus: null, newTendency: null, newValue: null } }

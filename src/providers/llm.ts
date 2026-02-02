@@ -8,9 +8,13 @@ export function createLLMProvider(config: ReveriesConfig['llm']) {
     throw new Error('Anthropic provider not yet implemented — install @ai-sdk/anthropic when needed')
   }
 
-  return createOpenAI({
+  const openai = createOpenAI({
     apiKey: config.apiKey || process.env.CEREBRAS_API_KEY || process.env.OPENAI_API_KEY,
     baseURL: config.baseUrl || 'https://api.cerebras.ai/v1',
     name: config.provider
   })
+
+  // Use chat() for OpenAI-compatible providers (Cerebras, Ollama, OpenRouter)
+  // The default provider() call uses the Responses API which only OpenAI supports
+  return (modelId: string) => openai.chat(modelId)
 }
