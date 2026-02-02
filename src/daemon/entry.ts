@@ -1,68 +1,48 @@
 import { DaemonServer } from './server.js'
-import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
-import path from 'node:path'
-import { Database } from '../storage/database.js'
-import { hydrateGraph } from '../memory/hydrator.js'
-import { loadConfig } from '../config.js'
-import { MonologueManager } from '../monologue/manager.js'
+import { DaemonLifecycle } from './lifecycle.js'
+import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 
 const PID_FILE = '/tmp/reveries.pid'
 
-const server = new DaemonServer()
-let monologueManager: MonologueManager | null = null
-
 async function main(): Promise<void> {
-  // Initialize memory subsystem
-  const config = loadConfig()
-  const dbPath = config.storage.dbPath.replace('~', homedir())
-  const dbDir = path.dirname(dbPath)
-  mkdirSync(dbDir, { recursive: true })
+  const lifecycle = new DaemonLifecycle()
+  await lifecycle.wake()
 
-  const db = new Database(dbPath)
-  const graph = hydrateGraph(db)
-  const selfModel = db.loadSelfModel()
-
-  server.init({ graph, db, selfModel, config })
-
-  // Initialize and start monologue
-  monologueManager = new MonologueManager({ graph, db, selfModel, config })
-  server.setMonologue(monologueManager)
-  await monologueManager.start()
+  const server = new DaemonServer()
+  server.init({
+    graph: lifecycle.graph,
+    db: lifecycle.db,
+    selfModel: lifecycle.selfModelManager.getOrCreate(),
+    config: lifecycle.config
+  })
+  server.setMonologue(lifecycle.monologue)
 
   await server.start()
+  await lifecycle.monologue.start()
+
   writeFileSync(PID_FILE, process.pid.toString())
-}
 
-async function shutdown(): Promise<void> {
-  if (monologueManager) {
-    await monologueManager.stop()
+  const shutdown = async () => {
+    await server.stop()
+    await lifecycle.sleep()
+    if (existsSync(PID_FILE)) unlinkSync(PID_FILE)
+    process.exit(0)
   }
-  await server.stop()
-  if (existsSync(PID_FILE)) {
-    unlinkSync(PID_FILE)
-  }
-  process.exit(0)
+
+  process.on('SIGTERM', () => {
+    shutdown().catch(() => process.exit(1))
+  })
+
+  process.on('SIGINT', () => {
+    shutdown().catch(() => process.exit(1))
+  })
+
+  process.on('exit', () => {
+    if (existsSync(PID_FILE)) unlinkSync(PID_FILE)
+  })
 }
-
-function cleanupPidFile(): void {
-  if (existsSync(PID_FILE)) {
-    unlinkSync(PID_FILE)
-  }
-}
-
-process.on('SIGTERM', () => {
-  shutdown().catch(() => process.exit(1))
-})
-
-process.on('SIGINT', () => {
-  shutdown().catch(() => process.exit(1))
-})
-
-// Clean up PID file on any exit (including shutdown via IPC)
-process.on('exit', cleanupPidFile)
 
 main().catch((err) => {
-  console.error('Failed to start daemon:', err)
+  console.error('Daemon failed to start:', err)
   process.exit(1)
 })
