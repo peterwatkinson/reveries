@@ -1,1 +1,1 @@
-export {} // TODO: SQLite persistence
+export { Database } from './database.js'
