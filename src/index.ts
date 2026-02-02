@@ -59,9 +59,11 @@ program
 
 program
   .command('monologue')
-  .description('Stream daemon monologue')
-  .action(async () => {
-    await monologueCommand()
+  .description('Stream live monologue or view history')
+  .option('--history', 'Show monologue history')
+  .option('--since <timestamp>', 'Show history since timestamp (ISO format)')
+  .action(async (options: { history?: boolean; since?: string }) => {
+    await monologueCommand(options)
   })
 
 program.parseAsync(process.argv).catch((err) => {

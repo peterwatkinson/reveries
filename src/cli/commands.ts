@@ -2,7 +2,10 @@ import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
+import { homedir } from 'node:os'
 import { DaemonClient } from '../daemon/client.js'
+import { Database } from '../storage/database.js'
+import { loadConfig } from '../config.js'
 import { startChat } from './chat.js'
 
 const PID_FILE = '/tmp/reveries.pid'
@@ -143,7 +146,16 @@ export async function memoryCommand(): Promise<void> {
   }
 }
 
-export async function monologueCommand(): Promise<void> {
+export async function monologueCommand(options: { history?: boolean; since?: string }): Promise<void> {
+  if (options.history) {
+    await monologueHistoryCommand(options.since)
+    return
+  }
+
+  await monologueStreamCommand()
+}
+
+async function monologueStreamCommand(): Promise<void> {
   const client = new DaemonClient()
   try {
     await client.connect()
@@ -175,4 +187,45 @@ export async function monologueCommand(): Promise<void> {
   }
 
   await client.disconnect()
+}
+
+async function monologueHistoryCommand(since?: string): Promise<void> {
+  const config = loadConfig()
+  const dbPath = config.storage.dbPath.replace('~', homedir())
+
+  if (!existsSync(dbPath)) {
+    console.log('No database found. Run \'reveries wake\' first to initialize.')
+    return
+  }
+
+  const db = new Database(dbPath)
+  try {
+    const allRaw = db.getRawExperiences({})
+    let monologueEntries = allRaw.filter(e => e.type === 'monologue')
+
+    if (since) {
+      const sinceDate = new Date(since)
+      if (isNaN(sinceDate.getTime())) {
+        console.log(`Invalid timestamp: ${since}`)
+        return
+      }
+      monologueEntries = monologueEntries.filter(e => e.timestamp >= sinceDate)
+    }
+
+    if (monologueEntries.length === 0) {
+      console.log('No monologue entries found.')
+      return
+    }
+
+    // Sort by timestamp ascending
+    monologueEntries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+    for (const entry of monologueEntries) {
+      console.log(`\n--- ${entry.timestamp.toISOString()} ---`)
+      console.log(entry.content)
+    }
+    console.log('')
+  } finally {
+    db.close()
+  }
 }
