@@ -9,6 +9,7 @@ import { ReveriesConfig } from '../config.js'
 import { createLLMProvider } from '../providers/llm.js'
 import { generateEmbedding } from '../providers/embeddings.js'
 import { nanoid } from 'nanoid'
+import type { MonologueManager } from '../monologue/manager.js'
 
 export interface ConversationState {
   id: string
@@ -21,6 +22,7 @@ export class ConversationHandler {
   private selfModel: SelfModel | null
   private config: ReveriesConfig
   private currentConversation: ConversationState | null = null
+  private monologue: MonologueManager | null = null
 
   constructor(params: {
     graph: MemoryGraph
@@ -32,6 +34,10 @@ export class ConversationHandler {
     this.db = params.db
     this.selfModel = params.selfModel
     this.config = params.config
+  }
+
+  setMonologue(monologue: MonologueManager): void {
+    this.monologue = monologue
   }
 
   async handleMessage(
@@ -66,7 +72,7 @@ export class ConversationHandler {
     const systemContext = assembleContext({
       memories,
       selfModel: this.selfModel,
-      recentMonologue: null, // TODO: get from monologue when implemented
+      recentMonologue: this.monologue?.recentBuffer || null,
       conversationHistory: this.currentConversation.history
     })
 
@@ -118,6 +124,9 @@ export class ConversationHandler {
 
   endConversation(): void {
     this.currentConversation = null
-    // TODO: trigger monologue resume, gap tracking
+    // Resume monologue after conversation ends
+    if (this.monologue) {
+      this.monologue.resumeAfterConversation()
+    }
   }
 }

@@ -7,6 +7,7 @@ import type { MemoryGraph } from '../memory/graph.js'
 import type { Database } from '../storage/database.js'
 import type { SelfModel } from '../memory/types.js'
 import type { ReveriesConfig } from '../config.js'
+import type { MonologueManager } from '../monologue/manager.js'
 
 export class DaemonServer {
   private server: net.Server | null = null
@@ -15,6 +16,7 @@ export class DaemonServer {
   private conversationHandler: ConversationHandler | null = null
   private graph: MemoryGraph | null = null
   private db: Database | null = null
+  private monologue: MonologueManager | null = null
 
   init(params: {
     graph: MemoryGraph
@@ -30,6 +32,14 @@ export class DaemonServer {
       selfModel: params.selfModel,
       config: params.config
     })
+  }
+
+  setMonologue(monologue: MonologueManager): void {
+    this.monologue = monologue
+    // Pass monologue reference to conversation handler for pause/resume
+    if (this.conversationHandler) {
+      this.conversationHandler.setMonologue(monologue)
+    }
   }
 
   async start(socketPath: string = SOCKET_PATH): Promise<void> {
@@ -125,7 +135,7 @@ export class DaemonServer {
         this.handleChat(request.message, request.conversationId, socket)
         break
       case 'monologue-stream':
-        this.sendResponse(socket, { type: 'ok' })
+        this.handleMonologueStream(socket)
         break
       default:
         this.sendResponse(socket, {
@@ -141,6 +151,11 @@ export class DaemonServer {
       return
     }
 
+    // Pause monologue during conversation
+    if (this.monologue) {
+      this.monologue.pause()
+    }
+
     try {
       await this.conversationHandler.handleMessage(
         message,
@@ -153,26 +168,64 @@ export class DaemonServer {
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown error during chat'
       this.sendResponse(socket, { type: 'error', message: errorMessage })
+    } finally {
+      // Resume monologue after conversation turn
+      if (this.monologue) {
+        this.monologue.resumeAfterConversation()
+      }
     }
   }
 
   private handleStatus(socket: net.Socket): void {
     const status: DaemonStatus = {
       uptime: Date.now() - this.startTime,
-      monologueState: 'quiescent',
+      monologueState: this.monologue?.state ?? 'quiescent',
       memoryStats: this.getMemoryStats(),
       lastConsolidation: null
     }
     this.sendResponse(socket, { type: 'status', data: status })
   }
 
+  private handleMonologueStream(socket: net.Socket): void {
+    if (!this.monologue) {
+      this.sendResponse(socket, { type: 'error', message: 'Monologue not available' })
+      return
+    }
+
+    const listener = (token: string) => {
+      this.sendResponse(socket, { type: 'monologue-chunk', content: token })
+    }
+
+    this.monologue.onToken(listener)
+
+    // Clean up when client disconnects
+    socket.on('close', () => {
+      this.monologue?.removeTokenListener(listener)
+    })
+
+    socket.on('error', () => {
+      this.monologue?.removeTokenListener(listener)
+    })
+
+    // Send current buffer as initial content if available
+    const currentBuffer = this.monologue.recentBuffer
+    if (currentBuffer) {
+      this.sendResponse(socket, { type: 'monologue-chunk', content: currentBuffer })
+    }
+  }
+
   private handleShutdown(socket: net.Socket): void {
     this.sendResponse(socket, { type: 'ok' })
     // Defer stop so the response can be sent
-    setImmediate(() => {
-      this.stop().catch(() => {
+    setImmediate(async () => {
+      try {
+        if (this.monologue) {
+          await this.monologue.stop()
+        }
+        await this.stop()
+      } catch {
         // Ignore errors during shutdown
-      })
+      }
     })
   }
 

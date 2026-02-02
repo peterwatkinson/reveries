@@ -143,6 +143,36 @@ export async function memoryCommand(): Promise<void> {
   }
 }
 
-export function monologueCommand(): void {
-  console.log('Monologue streaming not yet implemented.')
+export async function monologueCommand(): Promise<void> {
+  const client = new DaemonClient()
+  try {
+    await client.connect()
+  } catch {
+    console.log('Daemon is not running. Run \'reveries wake\' first.')
+    return
+  }
+
+  console.log('Streaming inner monologue... (Ctrl+C to stop)\n')
+
+  // Handle Ctrl+C gracefully
+  const cleanup = async () => {
+    process.stdout.write('\n')
+    await client.disconnect()
+    process.exit(0)
+  }
+
+  process.on('SIGINT', () => {
+    cleanup().catch(() => process.exit(0))
+  })
+
+  try {
+    await client.streamMonologue((chunk: string) => {
+      process.stdout.write(chunk)
+    })
+  } catch (e) {
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error'
+    console.error(`\nError: ${errorMessage}`)
+  }
+
+  await client.disconnect()
 }

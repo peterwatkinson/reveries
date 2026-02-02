@@ -60,8 +60,8 @@ program
 program
   .command('monologue')
   .description('Stream daemon monologue')
-  .action(() => {
-    monologueCommand()
+  .action(async () => {
+    await monologueCommand()
   })
 
 program.parseAsync(process.argv).catch((err) => {

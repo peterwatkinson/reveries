@@ -116,4 +116,35 @@ export class DaemonClient {
       } satisfies DaemonRequest) + '\n')
     })
   }
+
+  async streamMonologue(onChunk: (chunk: string) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || this.socket.destroyed) {
+        reject(new Error('Not connected'))
+        return
+      }
+
+      this.responseHandler = (response: DaemonResponse) => {
+        if (response.type === 'monologue-chunk') {
+          onChunk(response.content)
+          // Keep the handler active for more chunks — monologue streams indefinitely
+        } else if (response.type === 'error') {
+          this.responseHandler = null
+          reject(new Error(response.message))
+        }
+        // Note: monologue stream does not have a 'done' message —
+        // the client disconnects when the user presses Ctrl+C
+      }
+
+      this.socket.write(JSON.stringify({
+        type: 'monologue-stream'
+      } satisfies DaemonRequest) + '\n')
+
+      // Resolve when the socket closes (user disconnects)
+      this.socket.on('close', () => {
+        this.responseHandler = null
+        resolve()
+      })
+    })
+  }
 }

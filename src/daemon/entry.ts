@@ -5,10 +5,12 @@ import path from 'node:path'
 import { Database } from '../storage/database.js'
 import { hydrateGraph } from '../memory/hydrator.js'
 import { loadConfig } from '../config.js'
+import { MonologueManager } from '../monologue/manager.js'
 
 const PID_FILE = '/tmp/reveries.pid'
 
 const server = new DaemonServer()
+let monologueManager: MonologueManager | null = null
 
 async function main(): Promise<void> {
   // Initialize memory subsystem
@@ -23,11 +25,19 @@ async function main(): Promise<void> {
 
   server.init({ graph, db, selfModel, config })
 
+  // Initialize and start monologue
+  monologueManager = new MonologueManager({ graph, db, selfModel, config })
+  server.setMonologue(monologueManager)
+  await monologueManager.start()
+
   await server.start()
   writeFileSync(PID_FILE, process.pid.toString())
 }
 
 async function shutdown(): Promise<void> {
+  if (monologueManager) {
+    await monologueManager.stop()
+  }
   await server.stop()
   if (existsSync(PID_FILE)) {
     unlinkSync(PID_FILE)

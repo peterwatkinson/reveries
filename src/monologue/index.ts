@@ -1,1 +1,5 @@
-export {} // TODO: inner monologue
+export { MonologueLoop } from './loop.js'
+export { MonologueManager } from './manager.js'
+export { ReactivationTriggers } from './triggers.js'
+export { isQuiescent, detectStuckLoop } from './quiescence.js'
+export { buildMonologuePrompt } from './prompts.js'
