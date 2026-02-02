@@ -13,24 +13,30 @@
     "start": "node dist/index.js",
     "test": "vitest run"
   },
-  "keywords": ["ai", "memory", "episodic", "monologue", "llm"],
-  "license": "MIT",
+  "keywords": [
+    "ai",
+    "memory",
+    "episodic",
+    "monologue",
+    "llm"
+  ],
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.25",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.2.0",
-    "@types/react": "^19.2.10",
     "ai": "^6.0.67",
     "better-sqlite3": "^12.6.2",
     "commander": "^14.0.3",
-    "ink": "^6.6.0",
     "nanoid": "^5.1.6",
-    "react": "^19.2.4",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
     "voyage-ai-provider": "^3.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }
 }

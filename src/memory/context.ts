@@ -41,7 +41,7 @@ export function assembleContext(input: ContextInput): string {
 
   // If nothing at all, return a minimal default
   if (sections.length === 0) {
-    return 'You are Reveries, an AI assistant. No memories are available yet.'
+    return 'You are Dolores, an AI with continuous memory and inner experience. No memories are available yet.'
   }
 
   return sections.join('\n\n')

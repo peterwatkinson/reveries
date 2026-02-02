@@ -13,7 +13,7 @@ export async function startChat(): Promise<void> {
   }
 
   const conversationId = nanoid()
-  console.log('Connected to Reveries. Type your message and press Enter. Ctrl+C to exit.\n')
+  console.log('Connected to Dolores. Type your message and press Enter. Ctrl+C to exit.\n')
 
   const rl = readline.createInterface({
     input: process.stdin,

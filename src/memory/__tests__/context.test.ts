@@ -18,7 +18,7 @@ describe('Context Assembly', () => {
   ]
 
   const mockSelfModel: SelfModel = {
-    narrative: 'I am Reveries, an AI that builds deep memory over time.',
+    narrative: 'I am Dolores, an AI that builds deep memory over time.',
     values: ['honesty', 'curiosity'],
     tendencies: ['thorough analysis', 'direct communication'],
     relationship: {
@@ -46,7 +46,7 @@ describe('Context Assembly', () => {
     })
 
     // Should contain self-model identity
-    expect(context).toContain('Reveries')
+    expect(context).toContain('Dolores')
     // Should contain relationship context
     expect(context).toContain('peter')
     expect(context).toContain('direct, technical, collaborative')
@@ -102,7 +102,7 @@ describe('Context Assembly', () => {
       conversationHistory: []
     })
 
-    const identityPos = context.indexOf('Reveries')
+    const identityPos = context.indexOf('Dolores')
     const memoryPos = context.indexOf('fintech platform')
     // Identity/self-model should come before specific memories
     expect(identityPos).toBeLessThan(memoryPos)

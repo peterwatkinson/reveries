@@ -1,14 +1,12 @@
 # Reveries Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Build a daemon-based CLI chat application with biologically-inspired episodic memory, inner monologue, and associative retrieval.
 
-**Architecture:** A persistent Node.js daemon manages the memory graph, inner monologue, and consolidation engine. A CLI client connects via Unix socket IPC to chat. The daemon stays alive between conversations — the monologue continues. Memory is an in-memory graph backed by SQLite. Retrieval is activation-spreading, not vector search.
+**Architecture:** A persistent Node.js daemon manages the memory graph, inner monologue, and consolidation engine. A CLI client connects via Unix socket IPC to chat. The daemon stays alive between conversations -- the monologue continues. Memory is an in-memory graph backed by SQLite. Retrieval is activation-spreading, not vector search.
 
-**Tech Stack:** TypeScript, Node.js, ink (React for CLI), Vercel AI SDK (`ai`), `better-sqlite3`, `voyage-ai-provider` for embeddings, Commander.js for CLI routing.
+**Tech Stack:** TypeScript, Node.js, Vercel AI SDK (`ai`), `better-sqlite3`, `voyage-ai-provider` for embeddings, Commander.js for CLI routing.
 
-**Reference:** `reveries_spec.md` and `reveries_architecture.md` are the source of truth.
+**Reference:** See `docs/design.md` and `docs/spec.md`.
 
 ---
 

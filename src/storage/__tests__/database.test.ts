@@ -89,7 +89,7 @@ describe('Database', () => {
 
   it('loads and saves self model', () => {
     const model = {
-      narrative: 'I am Reveries',
+      narrative: 'I am Dolores',
       values: ['curiosity'],
       tendencies: ['thorough'],
       relationship: {
@@ -109,7 +109,7 @@ describe('Database', () => {
     db.saveSelfModel(model)
     const loaded = db.loadSelfModel()
     expect(loaded).not.toBeNull()
-    expect(loaded!.narrative).toBe('I am Reveries')
+    expect(loaded!.narrative).toBe('I am Dolores')
     expect(loaded!.values).toEqual(['curiosity'])
   })
 })

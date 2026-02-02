@@ -31,7 +31,7 @@ describe('SelfModelManager', () => {
   it('loads existing self-model from database', () => {
     // Save one first
     const model: SelfModel = {
-      narrative: 'I am Reveries',
+      narrative: 'I am Dolores',
       values: ['curiosity'],
       tendencies: ['thorough'],
       relationship: {
@@ -50,13 +50,13 @@ describe('SelfModelManager', () => {
     db.saveSelfModel(model)
 
     const loaded = manager.getOrCreate()
-    expect(loaded.narrative).toBe('I am Reveries')
+    expect(loaded.narrative).toBe('I am Dolores')
     expect(loaded.values).toEqual(['curiosity'])
   })
 
   it('merges updates without losing existing data', () => {
     const model = manager.getOrCreate()
-    model.narrative = 'I am Reveries'
+    model.narrative = 'I am Dolores'
     model.values = ['curiosity']
     manager.save(model)
 
@@ -68,7 +68,7 @@ describe('SelfModelManager', () => {
     })
 
     const updated = manager.getOrCreate()
-    expect(updated.narrative).toBe('I am Reveries')
+    expect(updated.narrative).toBe('I am Dolores')
     expect(updated.values).toContain('curiosity')
     expect(updated.values).toContain('persistence')
     expect(updated.tendencies).toContain('biological metaphors')
