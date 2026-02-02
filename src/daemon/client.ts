@@ -81,4 +81,39 @@ export class DaemonClient {
       throw new Error(`Unexpected response type: ${response.type}`)
     }
   }
+
+  async chat(
+    message: string,
+    conversationId: string,
+    onChunk: (chunk: string) => void
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || this.socket.destroyed) {
+        reject(new Error('Not connected'))
+        return
+      }
+
+      this.responseHandler = (response: DaemonResponse) => {
+        if (response.type === 'chat-chunk') {
+          onChunk(response.content)
+          // Keep the handler active for more chunks
+        } else if (response.type === 'chat-done') {
+          this.responseHandler = null
+          resolve()
+        } else if (response.type === 'error') {
+          this.responseHandler = null
+          reject(new Error(response.message))
+        } else {
+          this.responseHandler = null
+          reject(new Error(`Unexpected response type: ${response.type}`))
+        }
+      }
+
+      this.socket.write(JSON.stringify({
+        type: 'chat',
+        message,
+        conversationId
+      } satisfies DaemonRequest) + '\n')
+    })
+  }
 }

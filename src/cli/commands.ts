@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { DaemonClient } from '../daemon/client.js'
+import { startChat } from './chat.js'
 
 const PID_FILE = '/tmp/reveries.pid'
 
@@ -96,14 +97,7 @@ export async function statusCommand(): Promise<void> {
 }
 
 export async function defaultCommand(): Promise<void> {
-  const client = new DaemonClient()
-  try {
-    await client.connect()
-    await client.disconnect()
-    console.log('Connected to daemon.')
-  } catch {
-    console.log('Daemon not running. Run \'reveries wake\' first.')
-  }
+  await startChat()
 }
 
 export async function consolidateCommand(): Promise<void> {
