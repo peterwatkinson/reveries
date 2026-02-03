@@ -6,7 +6,7 @@ import { MonologueManager } from '../monologue/manager.js'
 import { ConsolidationEngine } from '../consolidation/engine.js'
 import { GapTracker } from '../memory/gaps.js'
 import { CircuitBreaker } from '../circuit-breaker/breaker.js'
-import { ReveriesConfig, loadConfig } from '../config.js'
+import { ReveriesConfig, loadConfig, validateConfig } from '../config.js'
 import { createLLMProvider } from '../providers/llm.js'
 import { generateEmbedding } from '../providers/embeddings.js'
 import { generateText } from 'ai'
@@ -30,6 +30,13 @@ export class DaemonLifecycle {
   async wake(): Promise<void> {
     // 1. Load config
     this.config = loadConfig()
+
+    // 1b. Validate API keys
+    const configErrors = validateConfig(this.config)
+    if (configErrors.length > 0) {
+      const details = configErrors.map(e => e.message).join('\n')
+      throw new Error(`Missing API keys:\n${details}`)
+    }
 
     // 2. Open database
     const dbPath = this.config.storage.dbPath.replace('~', homedir())

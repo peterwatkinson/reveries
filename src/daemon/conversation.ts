@@ -16,6 +16,8 @@ export interface ConversationState {
   history: { role: 'user' | 'assistant'; content: string }[]
 }
 
+const MAX_HISTORY_TURNS = 50
+
 export class ConversationHandler {
   private graph: MemoryGraph
   private db: Database
@@ -99,9 +101,12 @@ export class ConversationHandler {
       onChunk(chunk)
     }
 
-    // 5. Update conversation history
+    // 5. Update conversation history (bounded to prevent memory exhaustion)
     this.currentConversation.history.push({ role: 'user', content: message })
     this.currentConversation.history.push({ role: 'assistant', content: fullResponse })
+    if (this.currentConversation.history.length > MAX_HISTORY_TURNS * 2) {
+      this.currentConversation.history = this.currentConversation.history.slice(-MAX_HISTORY_TURNS * 2)
+    }
 
     // 6. Encode the exchange to raw buffer
     try {

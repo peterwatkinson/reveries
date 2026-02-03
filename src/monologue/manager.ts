@@ -47,12 +47,14 @@ export class MonologueManager {
     this.loop = new MonologueLoop({
       generate: (context) => this.generateMonologue(context),
       onToken: (token) => {
+        process.stdout.write(token)
         this.monologueListeners.forEach(l => l(token))
         this.evaluateCircuitBreaker(token)
       },
       onCycleComplete: (buffer) => this.onCycleComplete(buffer),
       onQuiescent: () => {
         this._state = 'quiescent'
+        console.log('\n\x1b[36m[monologue] quiescent — waiting for trigger\x1b[0m')
       },
       maxTokensPerCycle: this.config.monologue.maxTokensPerCycle,
     })
@@ -85,11 +87,13 @@ export class MonologueManager {
   pause() {
     this._state = 'paused'
     this.loop.pause()
+    console.log('\n\x1b[36m[monologue] paused\x1b[0m')
   }
 
   resumeAfterConversation(conversationSummary?: string) {
     this._state = 'active'
     this.loop.resume()
+    console.log('\x1b[36m[monologue] resumed after conversation\x1b[0m')
     // Trigger the monologue to process the conversation
     this.triggers.triggerConversation()
   }
@@ -103,6 +107,11 @@ export class MonologueManager {
     this.lastCbCheck = currentLen
 
     const result = this.circuitBreaker.evaluate(this.cbCheckBuffer)
+
+    if (result.action !== 'continue') {
+      const color = result.severity === 'high' ? '\x1b[31m' : '\x1b[33m'
+      console.log(`\n${color}[circuit-breaker] ${result.action} — ${result.reason || 'no reason'} (${result.severity || 'unknown'})\x1b[0m`)
+    }
 
     if (result.action === 'interrupt' || result.action === 'interrupt_and_comfort') {
       this.loop.pause()
@@ -145,6 +154,8 @@ export class MonologueManager {
       this.cbCheckBuffer = ''
       this.lastCbCheck = 0
 
+      console.log('\x1b[36m[monologue] cycle starting\x1b[0m')
+
       try {
         await this.loop.runOneCycle()
       } catch (e) {
@@ -153,6 +164,7 @@ export class MonologueManager {
 
       // After cycle, enter quiescence and wait for trigger
       this._state = 'quiescent'
+      console.log('\n\x1b[36m[monologue] cycle complete — waiting for trigger\x1b[0m')
 
       if (!this.running) break
 

@@ -76,9 +76,12 @@ export const DEFAULT_CONFIG: ReveriesConfig = {
 const CONFIG_DIR = path.join(homedir(), '.reveries')
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json')
 
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = { ...target }
   for (const key of Object.keys(source)) {
+    if (DANGEROUS_KEYS.has(key)) continue
     if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
       result[key] = deepMerge(
         (target[key] as Record<string, unknown>) || {},
@@ -117,6 +120,37 @@ export function loadConfig(): ReveriesConfig {
   }
 
   return merged
+}
+
+export interface ConfigValidationError {
+  key: string
+  message: string
+}
+
+export function validateConfig(config: ReveriesConfig): ConfigValidationError[] {
+  const errors: ConfigValidationError[] = []
+
+  const llmKey = config.llm.apiKey || process.env.CEREBRAS_API_KEY || process.env.OPENAI_API_KEY
+  if (!llmKey) {
+    errors.push({
+      key: 'llm.apiKey',
+      message: `No LLM API key found. Set one of:\n`
+        + `    reveries config set llm.apiKey <key>\n`
+        + `    export CEREBRAS_API_KEY=<key>\n`
+        + `    export OPENAI_API_KEY=<key>`
+    })
+  }
+
+  const voyageKey = process.env.VOYAGE_API_KEY
+  if (!voyageKey) {
+    errors.push({
+      key: 'VOYAGE_API_KEY',
+      message: `No embedding API key found. Set:\n`
+        + `    export VOYAGE_API_KEY=<key>`
+    })
+  }
+
+  return errors
 }
 
 export function saveConfig(config: Partial<ReveriesConfig>): void {

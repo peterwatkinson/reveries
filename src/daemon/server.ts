@@ -62,12 +62,21 @@ export class DaemonServer {
     this.startTime = Date.now()
 
     return new Promise((resolve, reject) => {
+      const MAX_BUFFER_SIZE = 1024 * 1024 // 1MB
+
       this.server = net.createServer((socket) => {
         this.connections.add(socket)
         let buffer = ''
 
         socket.on('data', (data) => {
           buffer += data.toString()
+
+          if (buffer.length > MAX_BUFFER_SIZE) {
+            this.sendResponse(socket, { type: 'error', message: 'Message too large' })
+            buffer = ''
+            return
+          }
+
           const lines = buffer.split('\n')
           // Keep the last (possibly incomplete) chunk in the buffer
           buffer = lines.pop() ?? ''
@@ -75,7 +84,12 @@ export class DaemonServer {
           for (const line of lines) {
             if (line.trim() === '') continue
             try {
-              const request = JSON.parse(line) as DaemonRequest
+              const parsed = JSON.parse(line)
+              if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') {
+                this.sendResponse(socket, { type: 'error', message: 'Invalid request: missing type' })
+                continue
+              }
+              const request = parsed as DaemonRequest
               this.handleRequest(request, socket)
             } catch {
               this.sendResponse(socket, {

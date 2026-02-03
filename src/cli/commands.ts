@@ -5,7 +5,7 @@ import path from 'node:path'
 import { homedir } from 'node:os'
 import { DaemonClient } from '../daemon/client.js'
 import { Database } from '../storage/database.js'
-import { loadConfig, saveConfig } from '../config.js'
+import { loadConfig, saveConfig, validateConfig } from '../config.js'
 import { startChat } from './chat.js'
 import { getPidPath } from '../daemon/protocol.js'
 
@@ -49,6 +49,17 @@ export async function wakeCommand(_options: { config?: string }): Promise<void> 
   if (isDaemonRunning()) {
     console.log('Daemon is already running.')
     return
+  }
+
+  // Validate config before forking so errors are visible to the user
+  const config = loadConfig()
+  const errors = validateConfig(config)
+  if (errors.length > 0) {
+    console.error('Cannot start daemon — missing configuration:\n')
+    for (const err of errors) {
+      console.error(`  ${err.message}\n`)
+    }
+    process.exit(1)
   }
 
   const __filename = fileURLToPath(import.meta.url)
