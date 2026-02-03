@@ -2,14 +2,107 @@ import * as readline from 'node:readline'
 import { DaemonClient } from '../daemon/client.js'
 import { nanoid } from 'nanoid'
 
+// ANSI color codes
+const RESET = '\x1b[0m'
+const BOLD = '\x1b[1m'
+const DIM = '\x1b[2m'
+const ITALIC = '\x1b[3m'
+const CYAN = '\x1b[36m'
+const GREEN = '\x1b[32m'
+const YELLOW = '\x1b[33m'
+const MAGENTA = '\x1b[35m'
+const GRAY = '\x1b[90m'
+
 const HELP_TEXT = `
-Commands:
-  /status        Show daemon status
-  /memory <q>    Search memories for <q>
-  /consolidate   Trigger memory consolidation
-  /monologue     Toggle live monologue stream
-  /help          Show this help
+${BOLD}Commands:${RESET}
+  ${CYAN}/status${RESET}        Show daemon status
+  ${CYAN}/memory <q>${RESET}    Search memories for <q>
+  ${CYAN}/consolidate${RESET}   Trigger memory consolidation
+  ${CYAN}/monologue${RESET}     Toggle live monologue stream
+  ${CYAN}/help${RESET}          Show this help
 `
+
+// Spinner frames for thinking indicator
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+class Spinner {
+  private frameIndex = 0
+  private interval: NodeJS.Timeout | null = null
+  private message: string
+
+  constructor(message: string = 'thinking') {
+    this.message = message
+  }
+
+  start(): void {
+    this.frameIndex = 0
+    process.stdout.write('\n')
+    this.render()
+    this.interval = setInterval(() => {
+      this.frameIndex = (this.frameIndex + 1) % SPINNER_FRAMES.length
+      this.render()
+    }, 80)
+  }
+
+  setMessage(message: string): void {
+    this.message = message
+    this.render()
+  }
+
+  private render(): void {
+    const frame = SPINNER_FRAMES[this.frameIndex]
+    process.stdout.write(`\r${DIM}${frame} ${this.message}...${RESET}\x1b[K`)
+  }
+
+  stop(): void {
+    if (this.interval) {
+      clearInterval(this.interval)
+      this.interval = null
+    }
+    // Clear the spinner line
+    process.stdout.write('\r\x1b[K')
+  }
+}
+
+/**
+ * Simple markdown to terminal renderer.
+ * Handles: **bold**, *italic*, `code`, ```code blocks```, headers, and lists.
+ */
+function renderMarkdown(text: string): string {
+  let result = text
+
+  // Code blocks (must be done first to avoid processing markdown inside them)
+  result = result.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) => {
+    const lines = code.trim().split('\n')
+    const formatted = lines.map((line: string) => `  ${GRAY}${line}${RESET}`).join('\n')
+    return `\n${formatted}\n`
+  })
+
+  // Inline code
+  result = result.replace(/`([^`]+)`/g, `${GRAY}$1${RESET}`)
+
+  // Bold (** or __)
+  result = result.replace(/\*\*([^*]+)\*\*/g, `${BOLD}$1${RESET}`)
+  result = result.replace(/__([^_]+)__/g, `${BOLD}$1${RESET}`)
+
+  // Italic (* or _) - be careful not to match already-processed bold
+  result = result.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, `${ITALIC}$1${RESET}`)
+  result = result.replace(/(?<!_)_([^_]+)_(?!_)/g, `${ITALIC}$1${RESET}`)
+
+  // Headers (# to ####)
+  result = result.replace(/^#### (.+)$/gm, `${BOLD}$1${RESET}`)
+  result = result.replace(/^### (.+)$/gm, `${BOLD}$1${RESET}`)
+  result = result.replace(/^## (.+)$/gm, `${BOLD}${CYAN}$1${RESET}`)
+  result = result.replace(/^# (.+)$/gm, `${BOLD}${CYAN}$1${RESET}`)
+
+  // Bullet lists
+  result = result.replace(/^[-*] (.+)$/gm, `  ${CYAN}•${RESET} $1`)
+
+  // Numbered lists
+  result = result.replace(/^(\d+)\. (.+)$/gm, `  ${CYAN}$1.${RESET} $2`)
+
+  return result
+}
 
 export async function startChat(): Promise<void> {
   const client = new DaemonClient()
@@ -17,20 +110,21 @@ export async function startChat(): Promise<void> {
   try {
     await client.connect()
   } catch {
-    console.log('Could not connect to daemon. Run "reveries wake" first.')
+    console.log(`${YELLOW}Could not connect to daemon. Run "reveries wake" first.${RESET}`)
     process.exit(1)
   }
 
   const conversationId = nanoid()
   let monologueStreamActive = false
+  let responseBuffer = ''
 
-  console.log('Connected to Dolores. Type your message and press Enter. Ctrl+C to exit.')
-  console.log('Type /help for commands.\n')
+  console.log(`${GREEN}Connected to Dolores.${RESET} Type your message and press Enter. ${DIM}Ctrl+C to exit.${RESET}`)
+  console.log(`${DIM}Type /help for commands.${RESET}\n`)
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: '> '
+    prompt: `${CYAN}>${RESET} `
   })
 
   rl.prompt()
@@ -52,16 +146,33 @@ export async function startChat(): Promise<void> {
       return
     }
 
-    // Send to daemon and stream response
-    process.stdout.write('\n')
+    // Show thinking spinner while waiting for response
+    const spinner = new Spinner('thinking')
+    spinner.start()
+
+    responseBuffer = ''
+    let receivedFirst = false
 
     try {
       await client.chat(message, conversationId, (chunk: string) => {
-        process.stdout.write(chunk)
+        if (!receivedFirst) {
+          receivedFirst = true
+          spinner.setMessage('responding')
+        }
+        responseBuffer += chunk
       })
+
+      spinner.stop()
+
+      // Display formatted response
+      if (responseBuffer) {
+        const formatted = renderMarkdown(responseBuffer)
+        process.stdout.write(`\n${MAGENTA}Dolores:${RESET} ${formatted}`)
+      }
     } catch (e) {
+      spinner.stop()
       const errorMessage = e instanceof Error ? e.message : 'Unknown error'
-      console.error(`\nError: ${errorMessage}`)
+      console.error(`\n${YELLOW}Error: ${errorMessage}${RESET}`)
     }
 
     process.stdout.write('\n\n')
@@ -69,7 +180,7 @@ export async function startChat(): Promise<void> {
   })
 
   rl.on('close', async () => {
-    console.log('\nGoodbye.')
+    console.log(`\n${DIM}Goodbye.${RESET}`)
     await client.disconnect()
     process.exit(0)
   })
@@ -98,21 +209,21 @@ async function handleCommand(
       try {
         const status = await client.status()
         console.log('')
-        console.log(`  Uptime:           ${formatUptime(status.uptime)}`)
-        console.log(`  Monologue state:  ${status.monologueState}`)
-        console.log(`  Raw buffer:       ${status.memoryStats.rawBufferCount}`)
-        console.log(`  Episodes:         ${status.memoryStats.episodeCount}`)
-        console.log(`  Links:            ${status.memoryStats.linkCount}`)
+        console.log(`  ${DIM}Uptime:${RESET}           ${formatUptime(status.uptime)}`)
+        console.log(`  ${DIM}Monologue state:${RESET}  ${status.monologueState}`)
+        console.log(`  ${DIM}Raw buffer:${RESET}       ${status.memoryStats.rawBufferCount}`)
+        console.log(`  ${DIM}Episodes:${RESET}         ${status.memoryStats.episodeCount}`)
+        console.log(`  ${DIM}Links:${RESET}            ${status.memoryStats.linkCount}`)
         console.log('')
       } catch (e) {
-        console.error('Failed to get status:', e instanceof Error ? e.message : e)
+        console.error(`${YELLOW}Failed to get status:${RESET}`, e instanceof Error ? e.message : e)
       }
       ctx.prompt()
       break
 
     case 'memory':
       if (!args) {
-        console.log('Usage: /memory <search query>')
+        console.log(`${DIM}Usage: /memory <search query>${RESET}`)
         ctx.prompt()
         break
       }
@@ -126,35 +237,37 @@ async function handleCommand(
             salience: number
           }[]
           if (results.length === 0) {
-            console.log('\nNo memories found.\n')
+            console.log(`\n${DIM}No memories found.${RESET}\n`)
           } else {
-            console.log(`\n  Found ${results.length} memory(s):\n`)
+            console.log(`\n  ${GREEN}Found ${results.length} memory(s):${RESET}\n`)
             for (const r of results) {
-              console.log(`  [${r.id}] ${r.summary}`)
-              console.log(`    Topics: ${r.topics.join(', ')} | Salience: ${r.salience.toFixed(2)}`)
+              console.log(`  ${CYAN}[${r.id.slice(0, 8)}]${RESET} ${r.summary}`)
+              console.log(`    ${DIM}Topics: ${r.topics.join(', ')} | Salience: ${r.salience.toFixed(2)}${RESET}`)
             }
             console.log('')
           }
         } else if (response.type === 'error') {
-          console.error('Error:', response.message)
+          console.error(`${YELLOW}Error:${RESET}`, response.message)
         }
       } catch (e) {
-        console.error('Failed to search memories:', e instanceof Error ? e.message : e)
+        console.error(`${YELLOW}Failed to search memories:${RESET}`, e instanceof Error ? e.message : e)
       }
       ctx.prompt()
       break
 
     case 'consolidate':
       try {
-        console.log('Triggering consolidation...')
+        const spinner = new Spinner('consolidating')
+        spinner.start()
         const response = await client.send({ type: 'consolidate' })
+        spinner.stop()
         if (response.type === 'ok') {
-          console.log('Consolidation complete.')
+          console.log(`${GREEN}Consolidation complete.${RESET}`)
         } else if (response.type === 'error') {
-          console.error('Error:', response.message)
+          console.error(`${YELLOW}Error:${RESET}`, response.message)
         }
       } catch (e) {
-        console.error('Failed to consolidate:', e instanceof Error ? e.message : e)
+        console.error(`${YELLOW}Failed to consolidate:${RESET}`, e instanceof Error ? e.message : e)
       }
       ctx.prompt()
       break
@@ -162,16 +275,16 @@ async function handleCommand(
     case 'monologue':
       if (ctx.getMonologueActive()) {
         ctx.setMonologueActive(false)
-        console.log('\nMonologue stream disabled.\n')
+        console.log(`\n${DIM}Monologue stream disabled.${RESET}\n`)
         ctx.prompt()
       } else {
         ctx.setMonologueActive(true)
-        console.log('\nMonologue stream enabled. Inner thoughts will appear inline.')
-        console.log('Type /monologue again to disable.\n')
+        console.log(`\n${GREEN}Monologue stream enabled.${RESET} ${DIM}Inner thoughts will appear inline.${RESET}`)
+        console.log(`${DIM}Type /monologue again to disable.${RESET}\n`)
         // Start streaming monologue in background
         client.streamMonologue((chunk: string) => {
           if (ctx.getMonologueActive()) {
-            process.stdout.write(`\x1b[2m${chunk}\x1b[0m`)  // Dim text for monologue
+            process.stdout.write(`${DIM}${chunk}${RESET}`)
           }
         }).catch(() => {
           // Stream ended or error, disable
@@ -182,8 +295,8 @@ async function handleCommand(
       break
 
     default:
-      console.log(`Unknown command: /${cmd}`)
-      console.log('Type /help for available commands.')
+      console.log(`${YELLOW}Unknown command: /${cmd}${RESET}`)
+      console.log(`${DIM}Type /help for available commands.${RESET}`)
       ctx.prompt()
   }
 }
