@@ -14,6 +14,7 @@ export class MonologueLoop {
   private _isRunning: boolean = false
   private buffer: string = ''
   private lastQuiescenceCheck: number = 0
+  private _pendingContext: string | null = null
 
   constructor(config: MonologueLoopConfig) {
     this.config = config
@@ -26,14 +27,25 @@ export class MonologueLoop {
 
   resume(context?: string) {
     this._isPaused = false
-    // context can be used to inform the next cycle
+    // Store context to be used in the next cycle
+    if (context) {
+      this._pendingContext = context
+    }
+  }
+
+  consumePendingContext(): string | null {
+    const ctx = this._pendingContext
+    this._pendingContext = null
+    return ctx
   }
 
   async runOneCycle(context?: string): Promise<void> {
     this._isRunning = true
+    this._isPaused = false
     this.buffer = ''
     this.lastQuiescenceCheck = 0
     let charCount = 0
+    let overBudget = false
 
     try {
       const stream = this.config.generate(context)
@@ -44,7 +56,24 @@ export class MonologueLoop {
         charCount += token.length
         this.config.onToken(token)
 
-        if (charCount >= this.config.maxTokensPerCycle) break
+        if (this._isPaused) break
+
+        // Once over budget, continue until we hit a sentence boundary
+        if (charCount >= this.config.maxTokensPerCycle) {
+          overBudget = true
+        }
+
+        if (overBudget) {
+          // Stop at sentence-ending punctuation followed by space/newline, or double newline
+          const tail = this.buffer.slice(-10)
+          if (/[.!?]\s*$/.test(tail) || /\n\n$/.test(tail)) {
+            break
+          }
+          // Hard limit: don't let it run forever (50% overage max)
+          if (charCount >= this.config.maxTokensPerCycle * 1.5) {
+            break
+          }
+        }
 
         // Check for quiescence every 200 chars
         if (charCount - this.lastQuiescenceCheck >= 200) {

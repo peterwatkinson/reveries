@@ -9,7 +9,8 @@ import {
   consolidateCommand,
   memoryCommand,
   monologueCommand,
-  configCommand
+  configCommand,
+  nameCommand
 } from './cli/commands.js'
 
 const program = new Command()
@@ -26,7 +27,8 @@ program
   .command('wake')
   .description('Start the daemon as a detached background process')
   .option('--config <path>', 'Path to config file')
-  .action(async (options: { config?: string }) => {
+  .option('-f, --foreground', 'Run in the foreground (shows monologue and actions)')
+  .action(async (options: { config?: string; foreground?: boolean }) => {
     await wakeCommand(options)
   })
 
@@ -77,6 +79,14 @@ program
   .argument('[value]', 'Config value')
   .action(async (action?: string, key?: string, value?: string) => {
     await configCommand(action, key, value)
+  })
+
+program
+  .command('name')
+  .description('View or set the user name')
+  .argument('[name]', 'Name to set')
+  .action(async (name?: string) => {
+    await nameCommand(name)
   })
 
 program.parseAsync(process.argv).catch((err) => {

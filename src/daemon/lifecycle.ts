@@ -44,12 +44,24 @@ export class DaemonLifecycle {
     mkdirSync(dbDir, { recursive: true })
     this.db = new Database(dbPath)
 
+    // Log raw experience counts
+    const rawExperiences = this.db.getRawExperiences({})
+    const unprocessed = rawExperiences.filter(e => !e.processed).length
+    console.log(`[startup] Database: ${rawExperiences.length} raw experiences (${unprocessed} unprocessed)`)
+
     // 3. Hydrate memory graph
     this.graph = hydrateGraph(this.db)
+    console.log(`[startup] Loaded ${this.graph.nodeCount} episodes, ${this.graph.linkCount} links`)
 
     // 4. Load/create self-model
     this.selfModelManager = new SelfModelManager(this.db)
     const selfModel = this.selfModelManager.getOrCreate()
+    const userName = selfModel.relationship?.userId
+    console.log(`[startup] Self-model loaded:`)
+    console.log(`  - User name: ${userName || '(not set)'}`)
+    console.log(`  - Narrative: ${selfModel.narrative?.slice(0, 80) || '(empty)'}...`)
+    console.log(`  - Values: ${selfModel.values.length}, Tendencies: ${selfModel.tendencies.length}`)
+    console.log(`  - Current focus: ${selfModel.currentFocus || '(none)'}`)
 
     // 5. Create circuit breaker
     this.circuitBreaker = new CircuitBreaker(this.config.circuitBreaker, this.db)

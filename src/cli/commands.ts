@@ -5,6 +5,7 @@ import path from 'node:path'
 import { homedir } from 'node:os'
 import { DaemonClient } from '../daemon/client.js'
 import { Database } from '../storage/database.js'
+import { SelfModelManager } from '../memory/self-model.js'
 import { loadConfig, saveConfig, validateConfig } from '../config.js'
 import { startChat } from './chat.js'
 import { getPidPath } from '../daemon/protocol.js'
@@ -45,13 +46,13 @@ function isDaemonRunning(): boolean {
   }
 }
 
-export async function wakeCommand(_options: { config?: string }): Promise<void> {
+export async function wakeCommand(_options: { config?: string; foreground?: boolean }): Promise<void> {
   if (isDaemonRunning()) {
     console.log('Daemon is already running.')
     return
   }
 
-  // Validate config before forking so errors are visible to the user
+  // Validate config before starting so errors are visible to the user
   const config = loadConfig()
   const errors = validateConfig(config)
   if (errors.length > 0) {
@@ -60,6 +61,13 @@ export async function wakeCommand(_options: { config?: string }): Promise<void> 
       console.error(`  ${err.message}\n`)
     }
     process.exit(1)
+  }
+
+  if (_options.foreground) {
+    console.log(`Daemon starting in foreground (PID: ${process.pid})\n`)
+    // Import and run the daemon entry directly in this process
+    await import('../daemon/entry.js')
+    return
   }
 
   const __filename = fileURLToPath(import.meta.url)
@@ -85,6 +93,10 @@ export async function sleepCommand(): Promise<void> {
     await client.disconnect()
     console.log('Daemon is going to sleep...')
   } catch {
+    // Daemon unreachable — clean up stale PID file if present
+    if (existsSync(PID_FILE)) {
+      unlinkSync(PID_FILE)
+    }
     console.log('Daemon is not running.')
   }
 }
@@ -380,4 +392,34 @@ export async function configCommand(action?: string, key?: string, value?: strin
   }
 
   console.log('Usage: reveries config [set <key> <value>]')
+}
+
+export async function nameCommand(newName?: string): Promise<void> {
+  const config = loadConfig()
+  const dbPath = config.storage.dbPath.replace('~', homedir())
+
+  if (!existsSync(dbPath)) {
+    console.log('No database found. Run \'reveries wake\' first to initialize.')
+    return
+  }
+
+  const db = new Database(dbPath)
+  try {
+    const manager = new SelfModelManager(db)
+
+    if (newName) {
+      manager.setUserName(newName)
+      console.log(`User name set to: ${newName}`)
+      console.log('Restart the daemon for changes to take effect.')
+    } else {
+      const currentName = manager.getUserName()
+      if (currentName) {
+        console.log(`Current user name: ${currentName}`)
+      } else {
+        console.log('No user name set. Use \'reveries name <name>\' to set one.')
+      }
+    }
+  } finally {
+    db.close()
+  }
 }

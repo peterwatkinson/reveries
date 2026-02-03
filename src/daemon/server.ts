@@ -8,6 +8,7 @@ import { generateEmbedding } from '../providers/embeddings.js'
 import type { MemoryGraph } from '../memory/graph.js'
 import type { Database } from '../storage/database.js'
 import type { SelfModel } from '../memory/types.js'
+import type { SelfModelManager } from '../memory/self-model.js'
 import type { ReveriesConfig } from '../config.js'
 import type { MonologueManager } from '../monologue/manager.js'
 import type { ConsolidationEngine } from '../consolidation/engine.js'
@@ -29,6 +30,7 @@ export class DaemonServer {
     graph: MemoryGraph
     db: Database
     selfModel: SelfModel | null
+    selfModelManager?: SelfModelManager
     config: ReveriesConfig
   }): void {
     this.graph = params.graph
@@ -38,13 +40,15 @@ export class DaemonServer {
       graph: params.graph,
       db: params.db,
       selfModel: params.selfModel,
-      config: params.config
+      config: params.config,
+      onUserNameDetected: params.selfModelManager
+        ? (name) => params.selfModelManager!.setUserName(name)
+        : undefined
     })
   }
 
   setMonologue(monologue: MonologueManager): void {
     this.monologue = monologue
-    // Pass monologue reference to conversation handler for pause/resume
     if (this.conversationHandler) {
       this.conversationHandler.setMonologue(monologue)
     }
@@ -62,7 +66,7 @@ export class DaemonServer {
     this.startTime = Date.now()
 
     return new Promise((resolve, reject) => {
-      const MAX_BUFFER_SIZE = 1024 * 1024 // 1MB
+      const MAX_BUFFER_SIZE = 1024 * 1024
 
       this.server = net.createServer((socket) => {
         this.connections.add(socket)
@@ -78,7 +82,6 @@ export class DaemonServer {
           }
 
           const lines = buffer.split('\n')
-          // Keep the last (possibly incomplete) chunk in the buffer
           buffer = lines.pop() ?? ''
 
           for (const line of lines) {
@@ -118,7 +121,6 @@ export class DaemonServer {
   }
 
   async stop(): Promise<void> {
-    // Close all active connections
     for (const socket of this.connections) {
       socket.destroy()
     }
@@ -210,7 +212,12 @@ export class DaemonServer {
     this.conversationTimer = setTimeout(() => {
       // No message for 30s — consider conversation ended
       if (this.monologue && this.monologuePausedForConversation) {
-        this.monologue.resumeAfterConversation()
+        // Get a summary of what was discussed so the monologue can process it
+        const summary = this.conversationHandler?.getConversationSummary() ?? undefined
+        // Mark the conversation end time for temporal tracking
+        this.conversationHandler?.markConversationEnded()
+        // Resume with the summary so monologue knows what to reflect on
+        this.monologue.resumeAfterConversation(summary)
         this.monologuePausedForConversation = false
       }
       this.conversationTimer = null
@@ -254,7 +261,6 @@ export class DaemonServer {
 
     this.monologue.onToken(listener)
 
-    // Clean up when client disconnects
     socket.on('close', () => {
       this.monologue?.removeTokenListener(listener)
     })
@@ -263,7 +269,6 @@ export class DaemonServer {
       this.monologue?.removeTokenListener(listener)
     })
 
-    // Send current buffer as initial content if available
     const currentBuffer = this.monologue.recentBuffer
     if (currentBuffer) {
       this.sendResponse(socket, { type: 'monologue-chunk', content: currentBuffer }, requestId)
@@ -304,7 +309,6 @@ export class DaemonServer {
 
   private handleShutdown(socket: net.Socket, requestId?: string): void {
     this.sendResponse(socket, { type: 'ok' }, requestId)
-    // Defer stop so the response can be sent
     setImmediate(async () => {
       try {
         if (this.monologue) {
@@ -323,7 +327,7 @@ export class DaemonServer {
       try {
         rawBufferCount = this.db.getRawExperiences({ processed: false }).length
       } catch {
-        // Ignore errors reading raw buffer
+        // Ignore
       }
     }
     return {

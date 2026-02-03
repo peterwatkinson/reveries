@@ -60,8 +60,31 @@ describe('MonologueLoop', () => {
     await loop.runOneCycle()
 
     // Should have stopped before exhausting all 100 tokens
+    // Allows up to 1.5x budget (30 chars) when no sentence boundary is found
     const totalChars = tokens.join('').length
-    expect(totalChars).toBeLessThanOrEqual(25) // some tolerance for the last token
+    expect(totalChars).toBeLessThanOrEqual(30)
+  })
+
+  it('stops at sentence boundary when over budget', async () => {
+    const tokens: string[] = []
+    const mockGenerate = vi.fn(async function* () {
+      yield 'This is a long sentence '  // 25 chars, over 20 budget
+      yield 'that keeps going. '         // ends with period
+      yield 'And more text after.'       // should not appear
+    })
+
+    const loop = new MonologueLoop({
+      generate: mockGenerate,
+      onToken: (token) => tokens.push(token),
+      onCycleComplete: vi.fn(),
+      maxTokensPerCycle: 20,
+    })
+
+    await loop.runOneCycle()
+
+    // Should stop after the period, not continue to "And more text after."
+    const result = tokens.join('')
+    expect(result).toBe('This is a long sentence that keeps going. ')
   })
 
   it('can be paused and resumed', async () => {

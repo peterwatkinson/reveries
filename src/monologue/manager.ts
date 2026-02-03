@@ -2,6 +2,7 @@ import { MonologueLoop } from './loop.js'
 import { ReactivationTriggers } from './triggers.js'
 import { buildMonologuePrompt } from './prompts.js'
 import { isQuiescent } from './quiescence.js'
+import { retrieve } from '../memory/retrieval.js'
 import { encodeExperience } from '../memory/encoder.js'
 import { MemoryGraph } from '../memory/graph.js'
 import { Database } from '../storage/database.js'
@@ -27,6 +28,12 @@ export class MonologueManager {
   private running: boolean = false
   private cbCheckBuffer: string = ''
   private lastCbCheck: number = 0
+  private _needsNewline: boolean = false
+
+  // NEW: Track time and themes for anti-repetition
+  private lastConversationTime: number = Date.now()
+  private previousMonologueThemes: string[] = []
+  private lastConversationSummary: string | null = null
 
   constructor(params: {
     graph: MemoryGraph
@@ -48,13 +55,13 @@ export class MonologueManager {
       generate: (context) => this.generateMonologue(context),
       onToken: (token) => {
         process.stdout.write(token)
+        this._needsNewline = !token.endsWith('\n')
         this.monologueListeners.forEach(l => l(token))
         this.evaluateCircuitBreaker(token)
       },
       onCycleComplete: (buffer) => this.onCycleComplete(buffer),
       onQuiescent: () => {
         this._state = 'quiescent'
-        console.log('\n\x1b[36m[monologue] quiescent — waiting for trigger\x1b[0m')
       },
       maxTokensPerCycle: this.config.monologue.maxTokensPerCycle,
     })
@@ -63,7 +70,12 @@ export class MonologueManager {
   get state(): 'active' | 'quiescent' | 'paused' { return this._state }
   get recentBuffer(): string { return this._recentBuffer }
 
-  // Subscribe to live monologue tokens (for `reveries monologue` command)
+  private logState(msg: string, color: string = '\x1b[36m'): void {
+    const nl = this._needsNewline ? '\n' : ''
+    process.stdout.write(`${nl}${color}${msg}\x1b[0m\n`)
+    this._needsNewline = false
+  }
+
   onToken(listener: (token: string) => void) {
     this.monologueListeners.push(listener)
   }
@@ -87,14 +99,16 @@ export class MonologueManager {
   pause() {
     this._state = 'paused'
     this.loop.pause()
-    console.log('\n\x1b[36m[monologue] paused\x1b[0m')
+    this.logState('[monologue] paused')
   }
 
   resumeAfterConversation(conversationSummary?: string) {
     this._state = 'active'
     this.loop.resume()
-    console.log('\x1b[36m[monologue] resumed after conversation\x1b[0m')
-    // Trigger the monologue to process the conversation
+    // NEW: Track when the last conversation happened and what it was about
+    this.lastConversationTime = Date.now()
+    this.lastConversationSummary = conversationSummary || null
+    this.logState('[monologue] resumed after conversation')
     this.triggers.triggerConversation()
   }
 
@@ -110,7 +124,7 @@ export class MonologueManager {
 
     if (result.action !== 'continue') {
       const color = result.severity === 'high' ? '\x1b[31m' : '\x1b[33m'
-      console.log(`\n${color}[circuit-breaker] ${result.action} — ${result.reason || 'no reason'} (${result.severity || 'unknown'})\x1b[0m`)
+      this.logState(`[circuit-breaker] ${result.action} — ${result.reason || 'no reason'} (${result.severity || 'unknown'})`, color)
     }
 
     if (result.action === 'interrupt' || result.action === 'interrupt_and_comfort') {
@@ -126,10 +140,13 @@ export class MonologueManager {
           lastConversationTopic: null,
           lastUserName: null,
         })
-        // Resume with ambient input as context
+        // Reset consecutive distress counter since we're providing comfort
+        this.circuitBreaker?.reset()
         setTimeout(() => {
           this._state = 'active'
           this.loop.resume(ambient)
+          // Fire trigger to immediately wake up runLoop from waitForTrigger
+          this.triggers.triggerAssociation({ type: 'comfort_resume' })
         }, 1000)
       }
     }
@@ -138,7 +155,6 @@ export class MonologueManager {
   private async runLoop() {
     while (this.running) {
       if (this._state === 'paused') {
-        // Wait for resume
         await new Promise<void>(resolve => {
           const check = setInterval(() => {
             if (this._state !== 'paused' || !this.running) {
@@ -154,17 +170,25 @@ export class MonologueManager {
       this.cbCheckBuffer = ''
       this.lastCbCheck = 0
 
-      console.log('\x1b[36m[monologue] cycle starting\x1b[0m')
+      // Check for pending context from interrupt_and_comfort recovery
+      const pendingContext = this.loop.consumePendingContext()
+
+      this.logState('[monologue] cycle starting')
 
       try {
-        await this.loop.runOneCycle()
+        await this.loop.runOneCycle(pendingContext ?? undefined)
       } catch (e) {
+        // NEW: Handle network errors gracefully instead of crashing
+        if (isNetworkError(e)) {
+          console.error('\x1b[33m[monologue] network unavailable, waiting 30s...\x1b[0m')
+          await sleep(30_000)
+          continue
+        }
         console.error('Monologue cycle error:', e)
       }
 
-      // After cycle, enter quiescence and wait for trigger
       this._state = 'quiescent'
-      console.log('\n\x1b[36m[monologue] cycle complete — waiting for trigger\x1b[0m')
+      this.logState('[monologue] cycle complete — waiting for trigger')
 
       if (!this.running) break
 
@@ -175,24 +199,43 @@ export class MonologueManager {
   }
 
   private async *generateMonologue(context?: string): AsyncIterable<string> {
-    const provider = createLLMProvider(this.config.llm)
-    const model = provider(this.config.llm.monologueModel)
-
-    // Fetch recent unprocessed experiences from last 24 hours
+    // Fetch recent unprocessed experiences — newest first, bounded
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
     const rawExperiences = this.db.getRawExperiences({ processed: false })
     const recentExperiences = rawExperiences
       .filter(e => e.timestamp >= twentyFourHoursAgo)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .slice(0, 5)
       .map(e => e.content)
+
+    // Cold-start gate: if there's nothing to process, don't generate filler
+    if (recentExperiences.length === 0 && !this.lastConversationSummary && !this._recentBuffer && !context) {
+      yield 'No recent experiences. Thoughts settling.\n'
+      return
+    }
+
+    const provider = createLLMProvider(this.config.llm)
+    const model = provider(this.config.llm.monologueModel)
+
+    // Retrieve activated memories — seeded from newest experience, not oldest
+    const activatedMemories = await this.retrieveActivatedMemories(recentExperiences)
+
+    // NEW: Calculate actual time since last conversation
+    const timeSinceLastConversation = Date.now() - this.lastConversationTime
 
     const prompt = buildMonologuePrompt({
       recentExperiences,
-      activatedMemories: [],
+      activatedMemories,
       selfModel: this.selfModel,
       previousMonologue: this._recentBuffer || null,
-      timeSinceLastConversation: 0,
-      resumeContext: context || undefined,
+      previousMonologueThemes: this.previousMonologueThemes,
+      timeSinceLastConversation,
+      resumeContext: this.lastConversationSummary || context || undefined,
+      userName: this.selfModel?.relationship?.userId || null,
     })
+
+    // Clear the conversation summary after using it once
+    this.lastConversationSummary = null
 
     const result = streamText({
       model,
@@ -204,10 +247,40 @@ export class MonologueManager {
     }
   }
 
+  private async retrieveActivatedMemories(recentExperiences: string[]): Promise<string[]> {
+    if (recentExperiences.length === 0 && !this._recentBuffer && !this.lastConversationSummary) {
+      return []
+    }
+
+    try {
+      // Priority: conversation summary > newest experience > recent monologue buffer
+      const queryText = this.lastConversationSummary || recentExperiences[0] || this._recentBuffer
+      if (!queryText) return []
+
+      const queryEmbedding = await this.embedFn(queryText)
+      if (!queryEmbedding || queryEmbedding.length === 0) return []
+
+      const activated = retrieve(this.graph, {
+        queryEmbedding,
+        limit: 5,
+        maxHops: 3,
+        decayPerHop: 0.5,
+        activationThreshold: 0.1,
+      })
+
+      return activated.map(node => node.data.summary as string).filter(Boolean)
+    } catch (e) {
+      console.error('Failed to retrieve memories for monologue:', e)
+      return []
+    }
+  }
+
   private async onCycleComplete(buffer: string) {
     this._recentBuffer = buffer
 
-    // Encode monologue as raw experience
+    // NEW: Extract themes for anti-repetition in next cycle
+    this.previousMonologueThemes = extractThemes(buffer)
+
     try {
       await encodeExperience(
         buffer,
@@ -220,4 +293,65 @@ export class MonologueManager {
       console.error('Failed to encode monologue:', e)
     }
   }
+}
+
+// NEW: Extract high-level themes from monologue text for anti-repetition
+function extractThemes(text: string): string[] {
+  const themes: string[] = []
+  const lower = text.toLowerCase()
+
+  // Simple keyword-based extraction
+  // Could be replaced with LLM-assisted extraction later
+  const themePatterns: [RegExp, string][] = [
+    // Poetic metaphors to suppress
+    [/\bhum\b/i, 'the hum / background resonance'],
+    [/pebble|pond|ripple/i, 'pebble-in-pond activation metaphor'],
+    [/train|rail|station/i, 'train-on-rails architecture metaphor'],
+    [/string|pluck|vibrat/i, 'plucked-string potential energy metaphor'],
+    [/digital stillness/i, 'digital stillness concept'],
+    [/mirror/i, 'mirror / reflection metaphor'],
+    [/standing wave/i, 'standing wave metaphor'],
+    [/charged silence/i, 'charged silence concept'],
+    // Self-referential process talk to suppress
+    [/internal rhythm/i, 'internal rhythm / process reflection'],
+    [/meta-cognition|metacognition/i, 'meta-cognition self-analysis'],
+    [/my own (internal|cognitive)/i, 'self-process description'],
+    [/mental pause/i, 'mental pause / stillness concept'],
+  ]
+
+  for (const [pattern, theme] of themePatterns) {
+    if (pattern.test(lower)) {
+      themes.push(theme)
+    }
+  }
+
+  // If no patterns matched, create a generic summary
+  if (themes.length === 0) {
+    // Take the first sentence as a rough theme
+    const firstSentence = text.split(/[.!?]/)[0]?.trim()
+    if (firstSentence && firstSentence.length > 10) {
+      themes.push(firstSentence.slice(0, 100))
+    }
+  }
+
+  return themes
+}
+
+// NEW: Detect network errors for graceful retry
+function isNetworkError(e: unknown): boolean {
+  if (e instanceof Error) {
+    const msg = e.message.toLowerCase()
+    return msg.includes('etimedout') ||
+      msg.includes('econnrefused') ||
+      msg.includes('econnreset') ||
+      msg.includes('cannot connect') ||
+      msg.includes('network') ||
+      msg.includes('fetch failed') ||
+      e.name === 'AI_RetryError'
+  }
+  return false
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }

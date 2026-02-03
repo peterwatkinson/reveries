@@ -129,17 +129,23 @@ export class ConsolidationEngine {
       }
 
       // 5. Update self-model if applicable
-      if (this.selfModel && result.selfModelUpdates) {
-        if (result.selfModelUpdates.currentFocus) {
-          this.selfModel.currentFocus = result.selfModelUpdates.currentFocus
+      // IMPORTANT: Reload from DB to avoid overwriting fields set by other processes (e.g., CLI)
+      if (result.selfModelUpdates) {
+        const freshModel = this.db.loadSelfModel()
+        if (freshModel) {
+          if (result.selfModelUpdates.currentFocus) {
+            freshModel.currentFocus = result.selfModelUpdates.currentFocus
+          }
+          if (result.selfModelUpdates.newTendency && !freshModel.tendencies.includes(result.selfModelUpdates.newTendency)) {
+            freshModel.tendencies.push(result.selfModelUpdates.newTendency)
+          }
+          if (result.selfModelUpdates.newValue && !freshModel.values.includes(result.selfModelUpdates.newValue)) {
+            freshModel.values.push(result.selfModelUpdates.newValue)
+          }
+          this.db.saveSelfModel(freshModel)
+          // Update our reference too
+          this.selfModel = freshModel
         }
-        if (result.selfModelUpdates.newTendency) {
-          this.selfModel.tendencies.push(result.selfModelUpdates.newTendency)
-        }
-        if (result.selfModelUpdates.newValue) {
-          this.selfModel.values.push(result.selfModelUpdates.newValue)
-        }
-        this.db.saveSelfModel(this.selfModel)
       }
 
       // 6. Mark raw experiences as processed

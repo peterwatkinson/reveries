@@ -70,4 +70,15 @@ export class SelfModelManager {
 
     this.save(model)
   }
+
+  setUserName(name: string): void {
+    const model = this.getOrCreate()
+    model.relationship.userId = name
+    this.save(model)
+  }
+
+  getUserName(): string | null {
+    const model = this.getOrCreate()
+    return model.relationship.userId || null
+  }
 }
