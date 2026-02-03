@@ -32,6 +32,7 @@ export type DaemonResponse =
   | { type: 'chat-done'; requestId?: string }
   | { type: 'status'; data: DaemonStatus; requestId?: string }
   | { type: 'monologue-chunk'; content: string; requestId?: string }
+  | { type: 'proactive-message'; content: string; requestId?: string }
   | { type: 'error'; message: string; requestId?: string }
   | { type: 'ok'; data?: unknown; requestId?: string }
 

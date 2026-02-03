@@ -16,6 +16,7 @@ import type { ConsolidationEngine } from '../consolidation/engine.js'
 export class DaemonServer {
   private server: net.Server | null = null
   private connections: Set<net.Socket> = new Set()
+  private chatClients: Set<net.Socket> = new Set()  // Track clients actively in chat
   private startTime: number = 0
   private conversationHandler: ConversationHandler | null = null
   private graph: MemoryGraph | null = null
@@ -51,6 +52,25 @@ export class DaemonServer {
     this.monologue = monologue
     if (this.conversationHandler) {
       this.conversationHandler.setMonologue(monologue)
+    }
+
+    // Listen for monologue actions (like reach_out)
+    monologue.onAction((action) => {
+      if (action.type === 'reach_out') {
+        this.broadcastToChat({
+          type: 'proactive-message',
+          content: action.message
+        })
+      }
+    })
+  }
+
+  /** Broadcast a message to all connected chat clients */
+  private broadcastToChat(response: DaemonResponse): void {
+    for (const socket of this.chatClients) {
+      if (!socket.destroyed) {
+        socket.write(JSON.stringify(response) + '\n')
+      }
     }
   }
 
@@ -180,6 +200,13 @@ export class DaemonServer {
       this.sendResponse(socket, { type: 'error', message: 'Daemon not initialized. Memory subsystem unavailable.' }, requestId)
       return
     }
+
+    // Track this socket as an active chat client
+    this.chatClients.add(socket)
+    socket.once('close', () => this.chatClients.delete(socket))
+
+    // Mark user as active for proactive messaging decisions
+    this.monologue?.markUserActive()
 
     // Pause monologue on the first message of a conversation session
     if (this.monologue && !this.monologuePausedForConversation) {

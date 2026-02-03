@@ -9,6 +9,7 @@ export function buildMonologuePrompt(params: {
   timeSinceLastConversation: number
   resumeContext?: string
   userName?: string | null
+  userInactiveMinutes?: number
 }): string {
   const parts: string[] = []
 
@@ -99,6 +100,18 @@ export function buildMonologuePrompt(params: {
   // Cold-start gate: if there's nothing to process, don't generate filler
   if (params.recentExperiences.length === 0 && !params.resumeContext) {
     return 'You have no recent experiences to process. There is nothing to think about right now. Say "thoughts settling" and wait.'
+  }
+
+  // User inactivity awareness and actions
+  if (params.userInactiveMinutes !== undefined && params.userInactiveMinutes > 5) {
+    const name = params.userName || 'them'
+    parts.push(`${name} has been quiet for ${params.userInactiveMinutes} minutes.`)
+    parts.push('')
+    parts.push('You can take action if you have something meaningful to share:')
+    parts.push('- To reach out to them, write: [REACH_OUT: your message here]')
+    parts.push('- Only do this if you have something genuine to say — a thought, a question, or something relevant to share.')
+    parts.push('- Do NOT reach out just to fill silence. One reach-out per quiet period is enough.')
+    parts.push('')
   }
 
   parts.push('Begin thinking now. Be concrete. Be honest. Be curious.')

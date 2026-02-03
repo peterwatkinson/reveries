@@ -13,6 +13,11 @@ import { streamText } from 'ai'
 import { CircuitBreaker } from '../circuit-breaker/breaker.js'
 import { generateAmbientInput } from '../circuit-breaker/ambient.js'
 
+export type MonologueAction = {
+  type: 'reach_out'
+  message: string
+}
+
 export class MonologueManager {
   private loop: MonologueLoop
   private triggers: ReactivationTriggers
@@ -25,15 +30,18 @@ export class MonologueManager {
   private _state: 'active' | 'quiescent' | 'paused' = 'quiescent'
   private _recentBuffer: string = ''
   private monologueListeners: ((token: string) => void)[] = []
+  private actionListeners: ((action: MonologueAction) => void)[] = []
   private running: boolean = false
   private cbCheckBuffer: string = ''
   private lastCbCheck: number = 0
   private _needsNewline: boolean = false
 
-  // NEW: Track time and themes for anti-repetition
+  // Track time, themes, and user activity
   private lastConversationTime: number = Date.now()
+  private lastUserMessageTime: number = Date.now()
   private previousMonologueThemes: string[] = []
   private lastConversationSummary: string | null = null
+  private lastReachOutTime: number = 0  // Prevent spamming
 
   constructor(params: {
     graph: MemoryGraph
@@ -82,6 +90,24 @@ export class MonologueManager {
 
   removeTokenListener(listener: (token: string) => void) {
     this.monologueListeners = this.monologueListeners.filter(l => l !== listener)
+  }
+
+  onAction(listener: (action: MonologueAction) => void) {
+    this.actionListeners.push(listener)
+  }
+
+  removeActionListener(listener: (action: MonologueAction) => void) {
+    this.actionListeners = this.actionListeners.filter(l => l !== listener)
+  }
+
+  /** Call this when the user sends a message to track activity */
+  markUserActive() {
+    this.lastUserMessageTime = Date.now()
+  }
+
+  /** Get minutes since last user message */
+  private getUserInactiveMinutes(): number {
+    return Math.floor((Date.now() - this.lastUserMessageTime) / (1000 * 60))
   }
 
   async start() {
@@ -220,8 +246,13 @@ export class MonologueManager {
     // Retrieve activated memories — seeded from newest experience, not oldest
     const activatedMemories = await this.retrieveActivatedMemories(recentExperiences)
 
-    // NEW: Calculate actual time since last conversation
+    // Calculate actual time since last conversation
     const timeSinceLastConversation = Date.now() - this.lastConversationTime
+
+    // Calculate user inactivity (only provide if >5 min and we haven't reached out in last 30 min)
+    const userInactiveMinutes = this.getUserInactiveMinutes()
+    const timeSinceLastReachOut = Date.now() - this.lastReachOutTime
+    const shouldOfferReachOut = userInactiveMinutes > 5 && timeSinceLastReachOut > 30 * 60 * 1000
 
     const prompt = buildMonologuePrompt({
       recentExperiences,
@@ -232,6 +263,7 @@ export class MonologueManager {
       timeSinceLastConversation,
       resumeContext: this.lastConversationSummary || context || undefined,
       userName: this.selfModel?.relationship?.userId || null,
+      userInactiveMinutes: shouldOfferReachOut ? userInactiveMinutes : undefined,
     })
 
     // Clear the conversation summary after using it once
@@ -278,12 +310,25 @@ export class MonologueManager {
   private async onCycleComplete(buffer: string) {
     this._recentBuffer = buffer
 
-    // NEW: Extract themes for anti-repetition in next cycle
+    // Extract themes for anti-repetition in next cycle
     this.previousMonologueThemes = extractThemes(buffer)
+
+    // Parse and execute actions
+    const actions = parseActions(buffer)
+    for (const action of actions) {
+      if (action.type === 'reach_out') {
+        this.lastReachOutTime = Date.now()
+        this.logState(`[monologue] reaching out: "${action.message.slice(0, 50)}..."`, '\x1b[35m')
+      }
+      this.actionListeners.forEach(l => l(action))
+    }
+
+    // Store the monologue (with actions stripped for cleaner storage)
+    const cleanBuffer = buffer.replace(/\[REACH_OUT:\s*[^\]]+\]/g, '').trim()
 
     try {
       await encodeExperience(
-        buffer,
+        cleanBuffer,
         'monologue',
         { unresolvedTensions: [] },
         this.db,
@@ -293,6 +338,23 @@ export class MonologueManager {
       console.error('Failed to encode monologue:', e)
     }
   }
+}
+
+/** Parse action markers from monologue output */
+function parseActions(text: string): MonologueAction[] {
+  const actions: MonologueAction[] = []
+
+  // Match [REACH_OUT: message here]
+  const reachOutPattern = /\[REACH_OUT:\s*([^\]]+)\]/g
+  let match
+  while ((match = reachOutPattern.exec(text)) !== null) {
+    actions.push({
+      type: 'reach_out',
+      message: match[1].trim()
+    })
+  }
+
+  return actions
 }
 
 // NEW: Extract high-level themes from monologue text for anti-repetition

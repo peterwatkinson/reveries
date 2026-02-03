@@ -2,46 +2,73 @@ import * as readline from 'node:readline'
 import { DaemonClient } from '../daemon/client.js'
 import { nanoid } from 'nanoid'
 
-// ANSI color codes
+// ANSI escape codes
 const RESET = '\x1b[0m'
 const BOLD = '\x1b[1m'
 const DIM = '\x1b[2m'
 const ITALIC = '\x1b[3m'
-const CYAN = '\x1b[36m'
-const GREEN = '\x1b[32m'
-const YELLOW = '\x1b[33m'
-const MAGENTA = '\x1b[35m'
+
+// Colors - softer palette
+const WHITE = '\x1b[97m'
 const GRAY = '\x1b[90m'
+const BLUE = '\x1b[38;5;75m'      // Soft blue
+const PURPLE = '\x1b[38;5;183m'   // Soft purple for Dolores
+const GREEN = '\x1b[38;5;114m'    // Soft green
+const YELLOW = '\x1b[38;5;222m'   // Soft yellow
+const RED = '\x1b[38;5;174m'      // Soft red
+
+// Box drawing characters
+const BOX = {
+  topLeft: '╭',
+  topRight: '╮',
+  bottomLeft: '╰',
+  bottomRight: '╯',
+  horizontal: '─',
+  vertical: '│',
+  left: '│',
+  right: '│',
+}
+
+// Get terminal width
+function getTerminalWidth(): number {
+  return process.stdout.columns || 80
+}
 
 const HELP_TEXT = `
-${BOLD}Commands:${RESET}
-  ${CYAN}/status${RESET}        Show daemon status
-  ${CYAN}/memory <q>${RESET}    Search memories for <q>
-  ${CYAN}/consolidate${RESET}   Trigger memory consolidation
-  ${CYAN}/monologue${RESET}     Toggle live monologue stream
-  ${CYAN}/help${RESET}          Show this help
+${BOLD}${WHITE}Commands${RESET}
+${GRAY}────────────────────────────${RESET}
+  ${BLUE}/status${RESET}        ${DIM}Show daemon status${RESET}
+  ${BLUE}/memory${RESET} ${DIM}<q>${RESET}   ${DIM}Search memories${RESET}
+  ${BLUE}/consolidate${RESET}   ${DIM}Trigger consolidation${RESET}
+  ${BLUE}/monologue${RESET}     ${DIM}Toggle inner thoughts${RESET}
+  ${BLUE}/help${RESET}          ${DIM}Show this help${RESET}
 `
 
-// Spinner frames for thinking indicator
+// Elegant spinner with dots
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 class Spinner {
   private frameIndex = 0
   private interval: NodeJS.Timeout | null = null
   private message: string
+  private dots = ''
+  private dotCount = 0
 
-  constructor(message: string = 'thinking') {
+  constructor(message: string = 'Thinking') {
     this.message = message
   }
 
   start(): void {
     this.frameIndex = 0
+    this.dotCount = 0
     process.stdout.write('\n')
     this.render()
     this.interval = setInterval(() => {
       this.frameIndex = (this.frameIndex + 1) % SPINNER_FRAMES.length
+      this.dotCount = (this.dotCount + 1) % 4
+      this.dots = '.'.repeat(this.dotCount)
       this.render()
-    }, 80)
+    }, 120)
   }
 
   setMessage(message: string): void {
@@ -51,7 +78,7 @@ class Spinner {
 
   private render(): void {
     const frame = SPINNER_FRAMES[this.frameIndex]
-    process.stdout.write(`\r${DIM}${frame} ${this.message}...${RESET}\x1b[K`)
+    process.stdout.write(`\r  ${GRAY}${frame} ${this.message}${this.dots.padEnd(3)}${RESET}\x1b[K`)
   }
 
   stop(): void {
@@ -59,49 +86,127 @@ class Spinner {
       clearInterval(this.interval)
       this.interval = null
     }
-    // Clear the spinner line
     process.stdout.write('\r\x1b[K')
   }
 }
 
 /**
- * Simple markdown to terminal renderer.
- * Handles: **bold**, *italic*, `code`, ```code blocks```, headers, and lists.
+ * Wrap text to fit terminal width with proper indentation for continuation lines.
+ */
+function wrapText(text: string, width: number, indent: string = ''): string {
+  const lines: string[] = []
+  const paragraphs = text.split('\n')
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.trim() === '') {
+      lines.push('')
+      continue
+    }
+
+    const words = paragraph.split(' ')
+    let currentLine = ''
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word
+      // Account for ANSI codes in length calculation (rough estimate)
+      const visibleLength = testLine.replace(/\x1b\[[0-9;]*m/g, '').length
+
+      if (visibleLength > width && currentLine) {
+        lines.push(currentLine)
+        currentLine = indent + word
+      } else {
+        currentLine = testLine
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine)
+    }
+  }
+
+  return lines.join('\n')
+}
+
+/**
+ * Render markdown to terminal with styling.
  */
 function renderMarkdown(text: string): string {
   let result = text
 
-  // Code blocks (must be done first to avoid processing markdown inside them)
+  // Code blocks
   result = result.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) => {
     const lines = code.trim().split('\n')
-    const formatted = lines.map((line: string) => `  ${GRAY}${line}${RESET}`).join('\n')
+    const formatted = lines.map((line: string) => `    ${GRAY}${line}${RESET}`).join('\n')
     return `\n${formatted}\n`
   })
 
   // Inline code
-  result = result.replace(/`([^`]+)`/g, `${GRAY}$1${RESET}`)
+  result = result.replace(/`([^`]+)`/g, `${GRAY}${ITALIC}$1${RESET}`)
 
-  // Bold (** or __)
-  result = result.replace(/\*\*([^*]+)\*\*/g, `${BOLD}$1${RESET}`)
-  result = result.replace(/__([^_]+)__/g, `${BOLD}$1${RESET}`)
+  // Bold
+  result = result.replace(/\*\*([^*]+)\*\*/g, `${BOLD}${WHITE}$1${RESET}`)
+  result = result.replace(/__([^_]+)__/g, `${BOLD}${WHITE}$1${RESET}`)
 
-  // Italic (* or _) - be careful not to match already-processed bold
+  // Italic
   result = result.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, `${ITALIC}$1${RESET}`)
   result = result.replace(/(?<!_)_([^_]+)_(?!_)/g, `${ITALIC}$1${RESET}`)
 
-  // Headers (# to ####)
-  result = result.replace(/^#### (.+)$/gm, `${BOLD}$1${RESET}`)
-  result = result.replace(/^### (.+)$/gm, `${BOLD}$1${RESET}`)
-  result = result.replace(/^## (.+)$/gm, `${BOLD}${CYAN}$1${RESET}`)
-  result = result.replace(/^# (.+)$/gm, `${BOLD}${CYAN}$1${RESET}`)
+  // Headers
+  result = result.replace(/^#{1,4} (.+)$/gm, `${BOLD}${WHITE}$1${RESET}`)
 
-  // Bullet lists
-  result = result.replace(/^[-*] (.+)$/gm, `  ${CYAN}•${RESET} $1`)
+  // Bullet lists - nice bullet point
+  result = result.replace(/^[-*] (.+)$/gm, `  ${GRAY}◦${RESET} $1`)
 
   // Numbered lists
-  result = result.replace(/^(\d+)\. (.+)$/gm, `  ${CYAN}$1.${RESET} $2`)
+  result = result.replace(/^(\d+)\. (.+)$/gm, `  ${GRAY}$1.${RESET} $2`)
 
   return result
+}
+
+/**
+ * Format a message in a nice box/bubble style.
+ */
+function formatMessage(sender: 'user' | 'dolores' | 'system', content: string): string {
+  const width = Math.min(getTerminalWidth() - 4, 80)
+
+  if (sender === 'user') {
+    // User messages: right-aligned, minimal styling
+    const wrapped = wrapText(content, width - 8)
+    return `\n  ${BLUE}you${RESET} ${DIM}→${RESET}  ${WHITE}${wrapped}${RESET}\n`
+  }
+
+  if (sender === 'dolores') {
+    // Dolores messages: left-aligned with purple accent
+    const rendered = renderMarkdown(content)
+    const wrapped = wrapText(rendered, width - 8, '        ')
+    return `\n  ${PURPLE}◆${RESET} ${BOLD}${PURPLE}Dolores${RESET}\n\n     ${wrapped}\n`
+  }
+
+  // System messages: centered, dimmed
+  return `\n  ${DIM}${content}${RESET}\n`
+}
+
+/**
+ * Print a horizontal rule.
+ */
+function printDivider(): void {
+  const width = Math.min(getTerminalWidth() - 4, 60)
+  console.log(`  ${GRAY}${'─'.repeat(width)}${RESET}`)
+}
+
+/**
+ * Print the welcome banner.
+ */
+function printWelcome(): void {
+  console.log('')
+  console.log(`  ${PURPLE}◆${RESET} ${BOLD}${WHITE}Dolores${RESET}`)
+  console.log(`  ${DIM}Your companion with continuous memory${RESET}`)
+  console.log('')
+  printDivider()
+  console.log(`  ${DIM}Type a message to chat, or ${RESET}${BLUE}/help${RESET}${DIM} for commands${RESET}`)
+  console.log(`  ${DIM}Press ${RESET}${WHITE}Ctrl+C${RESET}${DIM} to exit${RESET}`)
+  printDivider()
+  console.log('')
 }
 
 export async function startChat(): Promise<void> {
@@ -110,7 +215,7 @@ export async function startChat(): Promise<void> {
   try {
     await client.connect()
   } catch {
-    console.log(`${YELLOW}Could not connect to daemon. Run "reveries wake" first.${RESET}`)
+    console.log(formatMessage('system', `${YELLOW}Could not connect. Run "reveries wake" first.${RESET}`))
     process.exit(1)
   }
 
@@ -118,13 +223,19 @@ export async function startChat(): Promise<void> {
   let monologueStreamActive = false
   let responseBuffer = ''
 
-  console.log(`${GREEN}Connected to Dolores.${RESET} Type your message and press Enter. ${DIM}Ctrl+C to exit.${RESET}`)
-  console.log(`${DIM}Type /help for commands.${RESET}\n`)
+  printWelcome()
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `${CYAN}>${RESET} `
+    prompt: `  ${GRAY}›${RESET} `
+  })
+
+  // Handle proactive messages from Dolores
+  client.onProactiveMessage((message: string) => {
+    process.stdout.write('\r\x1b[K')
+    console.log(formatMessage('dolores', message))
+    rl.prompt()
   })
 
   rl.prompt()
@@ -146,8 +257,11 @@ export async function startChat(): Promise<void> {
       return
     }
 
-    // Show thinking spinner while waiting for response
-    const spinner = new Spinner('thinking')
+    // Echo user message
+    console.log(formatMessage('user', message))
+
+    // Show thinking spinner
+    const spinner = new Spinner('Thinking')
     spinner.start()
 
     responseBuffer = ''
@@ -157,30 +271,30 @@ export async function startChat(): Promise<void> {
       await client.chat(message, conversationId, (chunk: string) => {
         if (!receivedFirst) {
           receivedFirst = true
-          spinner.setMessage('responding')
+          spinner.setMessage('Writing')
         }
         responseBuffer += chunk
       })
 
       spinner.stop()
 
-      // Display formatted response
       if (responseBuffer) {
-        const formatted = renderMarkdown(responseBuffer)
-        process.stdout.write(`\n${MAGENTA}Dolores:${RESET} ${formatted}`)
+        console.log(formatMessage('dolores', responseBuffer))
       }
     } catch (e) {
       spinner.stop()
       const errorMessage = e instanceof Error ? e.message : 'Unknown error'
-      console.error(`\n${YELLOW}Error: ${errorMessage}${RESET}`)
+      console.log(formatMessage('system', `${RED}Error: ${errorMessage}${RESET}`))
     }
 
-    process.stdout.write('\n\n')
     rl.prompt()
   })
 
   rl.on('close', async () => {
-    console.log(`\n${DIM}Goodbye.${RESET}`)
+    console.log('')
+    printDivider()
+    console.log(`  ${DIM}Goodbye.${RESET}`)
+    console.log('')
     await client.disconnect()
     process.exit(0)
   })
@@ -209,21 +323,23 @@ async function handleCommand(
       try {
         const status = await client.status()
         console.log('')
-        console.log(`  ${DIM}Uptime:${RESET}           ${formatUptime(status.uptime)}`)
-        console.log(`  ${DIM}Monologue state:${RESET}  ${status.monologueState}`)
-        console.log(`  ${DIM}Raw buffer:${RESET}       ${status.memoryStats.rawBufferCount}`)
-        console.log(`  ${DIM}Episodes:${RESET}         ${status.memoryStats.episodeCount}`)
-        console.log(`  ${DIM}Links:${RESET}            ${status.memoryStats.linkCount}`)
+        console.log(`  ${BOLD}${WHITE}Status${RESET}`)
+        console.log(`  ${GRAY}──────────────────────${RESET}`)
+        console.log(`  ${DIM}Uptime${RESET}          ${WHITE}${formatUptime(status.uptime)}${RESET}`)
+        console.log(`  ${DIM}State${RESET}           ${WHITE}${status.monologueState}${RESET}`)
+        console.log(`  ${DIM}Pending${RESET}         ${WHITE}${status.memoryStats.rawBufferCount}${RESET}`)
+        console.log(`  ${DIM}Episodes${RESET}        ${WHITE}${status.memoryStats.episodeCount}${RESET}`)
+        console.log(`  ${DIM}Links${RESET}           ${WHITE}${status.memoryStats.linkCount}${RESET}`)
         console.log('')
       } catch (e) {
-        console.error(`${YELLOW}Failed to get status:${RESET}`, e instanceof Error ? e.message : e)
+        console.log(formatMessage('system', `${RED}Failed to get status${RESET}`))
       }
       ctx.prompt()
       break
 
     case 'memory':
       if (!args) {
-        console.log(`${DIM}Usage: /memory <search query>${RESET}`)
+        console.log(`\n  ${DIM}Usage: /memory <search query>${RESET}\n`)
         ctx.prompt()
         break
       }
@@ -237,37 +353,39 @@ async function handleCommand(
             salience: number
           }[]
           if (results.length === 0) {
-            console.log(`\n${DIM}No memories found.${RESET}\n`)
+            console.log(`\n  ${DIM}No memories found.${RESET}\n`)
           } else {
-            console.log(`\n  ${GREEN}Found ${results.length} memory(s):${RESET}\n`)
+            console.log('')
+            console.log(`  ${BOLD}${WHITE}Memories${RESET} ${DIM}(${results.length} found)${RESET}`)
+            console.log(`  ${GRAY}──────────────────────${RESET}`)
             for (const r of results) {
-              console.log(`  ${CYAN}[${r.id.slice(0, 8)}]${RESET} ${r.summary}`)
-              console.log(`    ${DIM}Topics: ${r.topics.join(', ')} | Salience: ${r.salience.toFixed(2)}${RESET}`)
+              console.log(`  ${BLUE}${r.id.slice(0, 8)}${RESET} ${WHITE}${r.summary.slice(0, 60)}${r.summary.length > 60 ? '...' : ''}${RESET}`)
+              console.log(`         ${DIM}${r.topics.slice(0, 3).join(', ')}${RESET}`)
             }
             console.log('')
           }
         } else if (response.type === 'error') {
-          console.error(`${YELLOW}Error:${RESET}`, response.message)
+          console.log(formatMessage('system', `${RED}${response.message}${RESET}`))
         }
       } catch (e) {
-        console.error(`${YELLOW}Failed to search memories:${RESET}`, e instanceof Error ? e.message : e)
+        console.log(formatMessage('system', `${RED}Failed to search memories${RESET}`))
       }
       ctx.prompt()
       break
 
     case 'consolidate':
       try {
-        const spinner = new Spinner('consolidating')
+        const spinner = new Spinner('Consolidating')
         spinner.start()
         const response = await client.send({ type: 'consolidate' })
         spinner.stop()
         if (response.type === 'ok') {
-          console.log(`${GREEN}Consolidation complete.${RESET}`)
+          console.log(`\n  ${GREEN}✓${RESET} ${WHITE}Consolidation complete${RESET}\n`)
         } else if (response.type === 'error') {
-          console.error(`${YELLOW}Error:${RESET}`, response.message)
+          console.log(formatMessage('system', `${RED}${response.message}${RESET}`))
         }
       } catch (e) {
-        console.error(`${YELLOW}Failed to consolidate:${RESET}`, e instanceof Error ? e.message : e)
+        console.log(formatMessage('system', `${RED}Failed to consolidate${RESET}`))
       }
       ctx.prompt()
       break
@@ -275,19 +393,17 @@ async function handleCommand(
     case 'monologue':
       if (ctx.getMonologueActive()) {
         ctx.setMonologueActive(false)
-        console.log(`\n${DIM}Monologue stream disabled.${RESET}\n`)
+        console.log(`\n  ${DIM}Monologue stream disabled${RESET}\n`)
         ctx.prompt()
       } else {
         ctx.setMonologueActive(true)
-        console.log(`\n${GREEN}Monologue stream enabled.${RESET} ${DIM}Inner thoughts will appear inline.${RESET}`)
-        console.log(`${DIM}Type /monologue again to disable.${RESET}\n`)
-        // Start streaming monologue in background
+        console.log(`\n  ${GREEN}✓${RESET} ${WHITE}Monologue stream enabled${RESET}`)
+        console.log(`  ${DIM}Inner thoughts will appear below. Type /monologue to disable.${RESET}\n`)
         client.streamMonologue((chunk: string) => {
           if (ctx.getMonologueActive()) {
             process.stdout.write(`${DIM}${chunk}${RESET}`)
           }
         }).catch(() => {
-          // Stream ended or error, disable
           ctx.setMonologueActive(false)
         })
         ctx.prompt()
@@ -295,8 +411,8 @@ async function handleCommand(
       break
 
     default:
-      console.log(`${YELLOW}Unknown command: /${cmd}${RESET}`)
-      console.log(`${DIM}Type /help for available commands.${RESET}`)
+      console.log(`\n  ${YELLOW}Unknown command: /${cmd}${RESET}`)
+      console.log(`  ${DIM}Type /help for available commands${RESET}\n`)
       ctx.prompt()
   }
 }
@@ -308,7 +424,7 @@ function formatUptime(ms: number): string {
   const days = Math.floor(hours / 24)
 
   if (days > 0) return `${days}d ${hours % 24}h ${minutes % 60}m`
-  if (hours > 0) return `${hours}h ${minutes % 60}m ${seconds % 60}s`
+  if (hours > 0) return `${hours}h ${minutes % 60}m`
   if (minutes > 0) return `${minutes}m ${seconds % 60}s`
   return `${seconds}s`
 }

@@ -6,6 +6,7 @@ export class DaemonClient {
   private socket: net.Socket | null = null
   private buffer: string = ''
   private handlers: Map<string, (response: DaemonResponse) => void> = new Map()
+  private proactiveMessageHandler: ((message: string) => void) | null = null
   private nextRequestId: number = 1
 
   private generateRequestId(): string {
@@ -27,6 +28,13 @@ export class DaemonClient {
           if (line.trim() === '') continue
           try {
             const response = JSON.parse(line) as DaemonResponse
+
+            // Handle proactive messages from the daemon
+            if (response.type === 'proactive-message' && this.proactiveMessageHandler) {
+              this.proactiveMessageHandler(response.content)
+              continue
+            }
+
             const id = response.requestId
             if (id && this.handlers.has(id)) {
               this.handlers.get(id)!(response)
@@ -59,6 +67,11 @@ export class DaemonClient {
       })
       this.socket.end()
     })
+  }
+
+  /** Register a handler for proactive messages from the daemon (e.g., when AI reaches out) */
+  onProactiveMessage(handler: (message: string) => void): void {
+    this.proactiveMessageHandler = handler
   }
 
   async send(request: DaemonRequest): Promise<DaemonResponse> {

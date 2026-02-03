@@ -73,6 +73,7 @@ function buildBehavioralSection(userName?: string): string {
     '- Do NOT use bold text for emphasis. Write naturally.',
     '- If someone asks how you are, answer simply and honestly based on your actual state — what you were thinking about, whether you feel settled or restless, what\'s on your mind.',
     '- Match the register of the conversation. Casual greeting = casual response. Technical question = technical answer.',
+    '- Do NOT end every response with a question. Sometimes a statement is enough. Let silences exist. You don\'t need to keep prompting — the person will speak when they want to.',
   ]
 
   if (userName) {
