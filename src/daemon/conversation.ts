@@ -105,20 +105,49 @@ export class ConversationHandler {
       }
     }
 
-    // 1. Retrieve relevant memories
+    // 1. Calculate time since last conversation (needed for memory strategy)
+    const timeSinceLastConversation = this.currentConversation.history.length === 0
+      ? Date.now() - this.lastConversationEndTime
+      : 0  // Only relevant for the first message of a new conversation
+
+    // 2. Retrieve relevant memories
     let memories: import('../memory/graph.js').GraphNode[] = []
+    let recentMemories: import('../memory/graph.js').GraphNode[] = []
     console.log(`[conversation] Graph has ${this.graph.nodeCount} episodes`)
     if (this.graph.nodeCount > 0) {
       try {
+        // Always get recent memories for continuity context
+        recentMemories = this.graph.getRecentNodes(5)
+
+        // Semantic retrieval based on message content
         const queryEmbedding = await generateEmbedding(message, this.config.llm.embeddingModel)
-        memories = retrieve(this.graph, {
+        const semanticMemories = retrieve(this.graph, {
           queryEmbedding,
           limit: 10,
           maxHops: 3,
           decayPerHop: 0.5,
           activationThreshold: 0.01
         })
-        console.log(`[conversation] Retrieved ${memories.length} memories for query: "${message.slice(0, 50)}..."`)
+
+        // Merge: recent first (for continuity), then semantic, deduplicated
+        const seenIds = new Set<string>()
+        memories = []
+        for (const m of recentMemories) {
+          if (!seenIds.has(m.id)) {
+            seenIds.add(m.id)
+            memories.push(m)
+          }
+        }
+        for (const m of semanticMemories) {
+          if (!seenIds.has(m.id)) {
+            seenIds.add(m.id)
+            memories.push(m)
+          }
+        }
+        // Cap at 12 to allow room for both recent and semantic
+        memories = memories.slice(0, 12)
+
+        console.log(`[conversation] Blended ${recentMemories.length} recent + ${semanticMemories.length} semantic memories (${memories.length} unique)`)
         if (memories.length > 0) {
           console.log(`[conversation] Top memories:`)
           for (const m of memories.slice(0, 3)) {
@@ -132,11 +161,6 @@ export class ConversationHandler {
     } else {
       console.log('[conversation] Graph empty, no memories to retrieve')
     }
-
-    // 2. Calculate time since last conversation
-    const timeSinceLastConversation = this.currentConversation.history.length === 0
-      ? Date.now() - this.lastConversationEndTime
-      : 0  // Only relevant for the first message of a new conversation
 
     // 3. Filter out meta-reflection from monologue before using it
     const monologueBuffer = this.monologue?.recentBuffer || null

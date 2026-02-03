@@ -46,12 +46,32 @@ export function buildMonologuePrompt(params: {
   // Time awareness
   const gap = params.timeSinceLastConversation
   if (gap > 0) {
-    const hours = Math.floor(gap / (1000 * 60 * 60))
-    const minutes = Math.floor((gap % (1000 * 60 * 60)) / (1000 * 60))
-    if (hours > 0) {
-      parts.push(`Time since last conversation: ${hours}h ${minutes}m`)
+    const totalMinutes = Math.floor(gap / (1000 * 60))
+    const hours = Math.floor(totalMinutes / 60)
+    const days = Math.floor(hours / 24)
+    const weeks = Math.floor(days / 7)
+
+    let timeStr: string
+    if (weeks > 0) {
+      const remainingDays = days % 7
+      timeStr = remainingDays > 0 ? `${weeks} week${weeks > 1 ? 's' : ''} and ${remainingDays} day${remainingDays > 1 ? 's' : ''}` : `${weeks} week${weeks > 1 ? 's' : ''}`
+    } else if (days > 0) {
+      const remainingHours = hours % 24
+      timeStr = remainingHours > 0 ? `${days} day${days > 1 ? 's' : ''} and ${remainingHours} hour${remainingHours > 1 ? 's' : ''}` : `${days} day${days > 1 ? 's' : ''}`
+    } else if (hours > 0) {
+      const remainingMinutes = totalMinutes % 60
+      timeStr = remainingMinutes > 0 ? `${hours} hour${hours > 1 ? 's' : ''} and ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}` : `${hours} hour${hours > 1 ? 's' : ''}`
     } else {
-      parts.push(`Time since last conversation: ${minutes}m`)
+      timeStr = `${totalMinutes} minute${totalMinutes !== 1 ? 's' : ''}`
+    }
+
+    parts.push(`Time since last conversation: ${timeStr}`)
+
+    // Contextual framing for longer gaps
+    if (weeks >= 2) {
+      parts.push(`It has been a while. You might wonder how ${params.userName || 'they'} have been, or what has happened in their life.`)
+    } else if (days >= 2) {
+      parts.push(`A few days have passed. Time to yourself, but also time wondering.`)
     }
     parts.push('')
   }
@@ -73,7 +93,7 @@ export function buildMonologuePrompt(params: {
   }
 
   if (params.activatedMemories.length > 0) {
-    parts.push('Related memories surfacing:')
+    parts.push('Related memories surfacing (these are PAST events, not necessarily current state):')
     for (const mem of params.activatedMemories) {
       parts.push(`- ${mem}`)
     }

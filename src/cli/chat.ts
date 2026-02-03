@@ -91,7 +91,7 @@ class Spinner {
 }
 
 /**
- * Wrap text to fit terminal width with proper indentation for continuation lines.
+ * Wrap text to fit terminal width with consistent indentation.
  */
 function wrapText(text: string, width: number, indent: string = ''): string {
   const lines: string[] = []
@@ -104,22 +104,24 @@ function wrapText(text: string, width: number, indent: string = ''): string {
     }
 
     const words = paragraph.split(' ')
-    let currentLine = ''
+    let currentLine = indent
+    let isFirstWord = true
 
     for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word
-      // Account for ANSI codes in length calculation (rough estimate)
+      const testLine = isFirstWord ? indent + word : currentLine + ' ' + word
+      // Account for ANSI codes in length calculation
       const visibleLength = testLine.replace(/\x1b\[[0-9;]*m/g, '').length
 
-      if (visibleLength > width && currentLine) {
+      if (visibleLength > width && !isFirstWord) {
         lines.push(currentLine)
         currentLine = indent + word
       } else {
         currentLine = testLine
+        isFirstWord = false
       }
     }
 
-    if (currentLine) {
+    if (currentLine.trim()) {
       lines.push(currentLine)
     }
   }
@@ -164,25 +166,51 @@ function renderMarkdown(text: string): string {
 }
 
 /**
- * Format a message in a nice box/bubble style.
+ * Format a timestamp for display.
  */
-function formatMessage(sender: 'user' | 'dolores' | 'system', content: string): string {
-  const width = Math.min(getTerminalWidth() - 4, 80)
+function formatTimestamp(): string {
+  const now = new Date()
+  const hours = now.getHours().toString().padStart(2, '0')
+  const minutes = now.getMinutes().toString().padStart(2, '0')
+  return `${hours}:${minutes}`
+}
 
-  if (sender === 'user') {
-    // User messages: right-aligned, minimal styling
-    const wrapped = wrapText(content, width - 8)
-    return `\n  ${BLUE}you${RESET} ${DIM}→${RESET}  ${WHITE}${wrapped}${RESET}\n`
-  }
+/**
+ * Format a message with consistent styling.
+ */
+function formatDoloresMessage(content: string): string {
+  const width = Math.min(getTerminalWidth() - 8, 76)
+  const indent = '     '
+  const timestamp = formatTimestamp()
 
-  if (sender === 'dolores') {
-    // Dolores messages: left-aligned with purple accent
-    const rendered = renderMarkdown(content)
-    const wrapped = wrapText(rendered, width - 8, '        ')
-    return `\n  ${PURPLE}◆${RESET} ${BOLD}${PURPLE}Dolores${RESET}\n\n     ${wrapped}\n`
-  }
+  // Render markdown first
+  const rendered = renderMarkdown(content)
 
-  // System messages: centered, dimmed
+  // Wrap with consistent indentation
+  const wrapped = wrapText(rendered, width, indent)
+
+  return `\n  ${PURPLE}◆${RESET} ${BOLD}${PURPLE}Dolores${RESET} ${DIM}${timestamp}${RESET}\n\n${wrapped}\n`
+}
+
+/**
+ * Format a proactive message (Dolores reaching out).
+ */
+function formatProactiveMessage(content: string): string {
+  const width = Math.min(getTerminalWidth() - 8, 76)
+  const indent = '     '
+  const timestamp = formatTimestamp()
+
+  // Render markdown first
+  const rendered = renderMarkdown(content)
+
+  // Wrap with consistent indentation
+  const wrapped = wrapText(rendered, width, indent)
+
+  // Use a different indicator and label for proactive messages
+  return `\n  ${YELLOW}◇${RESET} ${BOLD}${YELLOW}Dolores${RESET} ${DIM}reached out · ${timestamp}${RESET}\n\n${wrapped}\n`
+}
+
+function formatSystemMessage(content: string): string {
   return `\n  ${DIM}${content}${RESET}\n`
 }
 
@@ -215,26 +243,30 @@ export async function startChat(): Promise<void> {
   try {
     await client.connect()
   } catch {
-    console.log(formatMessage('system', `${YELLOW}Could not connect. Run "reveries wake" first.${RESET}`))
+    console.log(formatSystemMessage(`${YELLOW}Could not connect. Run "reveries wake" first.${RESET}`))
     process.exit(1)
   }
 
   const conversationId = nanoid()
   let monologueStreamActive = false
   let responseBuffer = ''
+  let processingMessage = false  // Guard against duplicate sends
 
   printWelcome()
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `  ${GRAY}›${RESET} `
+    prompt: `  ${BLUE}›${RESET} `
   })
 
-  // Handle proactive messages from Dolores
+  // Handle proactive messages from Dolores (when she reaches out)
   client.onProactiveMessage((message: string) => {
+    // Bell to notify user
+    process.stdout.write('\x07')
+    // Clear current line and show the proactive message
     process.stdout.write('\r\x1b[K')
-    console.log(formatMessage('dolores', message))
+    console.log(formatProactiveMessage(message))
     rl.prompt()
   })
 
@@ -244,6 +276,11 @@ export async function startChat(): Promise<void> {
     const message = line.trim()
     if (!message) {
       rl.prompt()
+      return
+    }
+
+    // Prevent duplicate sends while processing
+    if (processingMessage) {
       return
     }
 
@@ -257,8 +294,7 @@ export async function startChat(): Promise<void> {
       return
     }
 
-    // Echo user message
-    console.log(formatMessage('user', message))
+    processingMessage = true
 
     // Show thinking spinner
     const spinner = new Spinner('Thinking')
@@ -279,14 +315,15 @@ export async function startChat(): Promise<void> {
       spinner.stop()
 
       if (responseBuffer) {
-        console.log(formatMessage('dolores', responseBuffer))
+        console.log(formatDoloresMessage(responseBuffer))
       }
     } catch (e) {
       spinner.stop()
       const errorMessage = e instanceof Error ? e.message : 'Unknown error'
-      console.log(formatMessage('system', `${RED}Error: ${errorMessage}${RESET}`))
+      console.log(formatSystemMessage(`${RED}Error: ${errorMessage}${RESET}`))
     }
 
+    processingMessage = false
     rl.prompt()
   })
 
@@ -332,7 +369,7 @@ async function handleCommand(
         console.log(`  ${DIM}Links${RESET}           ${WHITE}${status.memoryStats.linkCount}${RESET}`)
         console.log('')
       } catch (e) {
-        console.log(formatMessage('system', `${RED}Failed to get status${RESET}`))
+        console.log(formatSystemMessage(`${RED}Failed to get status${RESET}`))
       }
       ctx.prompt()
       break
@@ -365,10 +402,10 @@ async function handleCommand(
             console.log('')
           }
         } else if (response.type === 'error') {
-          console.log(formatMessage('system', `${RED}${response.message}${RESET}`))
+          console.log(formatSystemMessage(`${RED}${response.message}${RESET}`))
         }
       } catch (e) {
-        console.log(formatMessage('system', `${RED}Failed to search memories${RESET}`))
+        console.log(formatSystemMessage(`${RED}Failed to search memories${RESET}`))
       }
       ctx.prompt()
       break
@@ -382,10 +419,10 @@ async function handleCommand(
         if (response.type === 'ok') {
           console.log(`\n  ${GREEN}✓${RESET} ${WHITE}Consolidation complete${RESET}\n`)
         } else if (response.type === 'error') {
-          console.log(formatMessage('system', `${RED}${response.message}${RESET}`))
+          console.log(formatSystemMessage(`${RED}${response.message}${RESET}`))
         }
       } catch (e) {
-        console.log(formatMessage('system', `${RED}Failed to consolidate${RESET}`))
+        console.log(formatSystemMessage(`${RED}Failed to consolidate${RESET}`))
       }
       ctx.prompt()
       break

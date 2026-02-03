@@ -74,14 +74,14 @@ export class DaemonLifecycle {
       db: this.db,
       graph: this.graph,
       selfModel,
-      consolidateFn: async (experiences) => {
+      consolidateFn: async (experiences, currentNarrative) => {
         // Use LLM for abstraction
         try {
           const provider = createLLMProvider(this.config.llm)
           const model = provider(this.config.llm.consolidationModel)
           const { text } = await generateText({
             model,
-            prompt: buildAbstractionPrompt(experiences),
+            prompt: buildAbstractionPrompt(experiences, currentNarrative),
             maxOutputTokens: 4096
           })
           // Strip markdown code fences if present (LLMs often wrap JSON in ```json ... ```)
@@ -89,7 +89,7 @@ export class DaemonLifecycle {
           return JSON.parse(cleaned)
         } catch (e) {
           console.error('Consolidation LLM call failed:', e)
-          return { episodes: [], selfModelUpdates: { currentFocus: null, newTendency: null, newValue: null } }
+          return { episodes: [], selfModelUpdates: { currentFocus: null, newTendency: null, newValue: null, narrativeUpdate: null } }
         }
       },
       embedFn: (text) => generateEmbedding(text, this.config.llm.embeddingModel),

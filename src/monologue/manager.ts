@@ -326,16 +326,19 @@ export class MonologueManager {
     // Store the monologue (with actions stripped for cleaner storage)
     const cleanBuffer = buffer.replace(/\[REACH_OUT:\s*[^\]]+\]/g, '').trim()
 
-    try {
-      await encodeExperience(
-        cleanBuffer,
-        'monologue',
-        { unresolvedTensions: [] },
-        this.db,
-        this.embedFn
-      )
-    } catch (e) {
-      console.error('Failed to encode monologue:', e)
+    // Only encode if there's actual content (not just actions)
+    if (cleanBuffer.length > 0) {
+      try {
+        await encodeExperience(
+          cleanBuffer,
+          'monologue',
+          { unresolvedTensions: [] },
+          this.db,
+          this.embedFn
+        )
+      } catch (e) {
+        console.error('Failed to encode monologue:', e)
+      }
     }
   }
 }
@@ -385,6 +388,13 @@ function extractThemes(text: string): string[] {
     if (pattern.test(lower)) {
       themes.push(theme)
     }
+  }
+
+  // Extract repeated questions - these are often unresolved concerns that shouldn't loop
+  const questionPattern = /\b(does he|should I|do I need|has he|is he|can he|will he|would he|could I|should we|do we|does she|has she|is she|can she)\b[^.?]*\?/gi
+  const questions = [...text.matchAll(questionPattern)].map(m => m[0].trim())
+  if (questions.length > 0) {
+    themes.push(...questions.slice(0, 3))
   }
 
   // If no patterns matched, create a generic summary

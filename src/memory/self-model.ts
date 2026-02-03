@@ -16,10 +16,14 @@ export class SelfModelManager {
   }
 
   getOrCreate(): SelfModel {
-    if (this.cached) return this.cached
+    if (this.cached) {
+      console.log(`[self-model] getOrCreate returning cached model, userId: "${this.cached.relationship?.userId}"`)
+      return this.cached
+    }
 
     const loaded = this.db.loadSelfModel()
     if (loaded) {
+      console.log(`[self-model] getOrCreate loaded from DB, userId: "${loaded.relationship?.userId}"`)
       this.cached = loaded
       return loaded
     }
@@ -72,9 +76,13 @@ export class SelfModelManager {
   }
 
   setUserName(name: string): void {
+    console.log(`[self-model] setUserName called with: "${name}"`)
     const model = this.getOrCreate()
+    console.log(`[self-model] Before update, userId: "${model.relationship?.userId}"`)
     model.relationship.userId = name
+    console.log(`[self-model] After update, userId: "${model.relationship?.userId}"`)
     this.save(model)
+    console.log(`[self-model] Saved to database`)
   }
 
   getUserName(): string | null {

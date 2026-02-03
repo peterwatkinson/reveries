@@ -79,6 +79,13 @@ export class MemoryGraph {
     return scored.slice(0, limit).map(s => s.node)
   }
 
+  /** Get most recently created nodes, sorted by creation date descending */
+  getRecentNodes(limit: number): GraphNode[] {
+    const nodes = Array.from(this.nodes.values())
+    nodes.sort((a, b) => b.created.getTime() - a.created.getTime())
+    return nodes.slice(0, limit)
+  }
+
   spreadActivation(
     seeds: Map<string, number>,
     options: SpreadActivationOptions

@@ -18,6 +18,7 @@ interface ConsolidationResult {
     currentFocus: string | null
     newTendency: string | null
     newValue: string | null
+    narrativeUpdate: string | null
   }
 }
 
@@ -25,7 +26,7 @@ export interface ConsolidationEngineConfig {
   db: Database
   graph: MemoryGraph
   selfModel: SelfModel | null
-  consolidateFn: (experiences: string[]) => Promise<ConsolidationResult>
+  consolidateFn: (experiences: string[], currentNarrative?: string) => Promise<ConsolidationResult>
   embedFn: (text: string) => Promise<number[]>
   decayOptions?: DecayOptions
 }
@@ -34,7 +35,7 @@ export class ConsolidationEngine {
   private db: Database
   private graph: MemoryGraph
   private selfModel: SelfModel | null
-  private consolidateFn: (experiences: string[]) => Promise<ConsolidationResult>
+  private consolidateFn: (experiences: string[], currentNarrative?: string) => Promise<ConsolidationResult>
   private embedFn: (text: string) => Promise<number[]>
   private decayOptions: DecayOptions
 
@@ -54,7 +55,9 @@ export class ConsolidationEngine {
     if (raw.length > 0) {
       // 2. Send to LLM for abstraction
       const contents = raw.map(r => r.content)
-      const result = await this.consolidateFn(contents)
+      // Get current narrative from DB (not stale cache) for context
+      const currentModel = this.db.loadSelfModel()
+      const result = await this.consolidateFn(contents, currentModel?.narrative || undefined)
 
       // 3. Create or merge episodes in the graph
       for (const ep of result.episodes) {
@@ -141,6 +144,14 @@ export class ConsolidationEngine {
           }
           if (result.selfModelUpdates.newValue && !freshModel.values.includes(result.selfModelUpdates.newValue)) {
             freshModel.values.push(result.selfModelUpdates.newValue)
+          }
+          if (result.selfModelUpdates.narrativeUpdate) {
+            // Append to existing narrative rather than replacing
+            if (freshModel.narrative) {
+              freshModel.narrative = `${freshModel.narrative} ${result.selfModelUpdates.narrativeUpdate}`
+            } else {
+              freshModel.narrative = result.selfModelUpdates.narrativeUpdate
+            }
           }
           this.db.saveSelfModel(freshModel)
           // Update our reference too

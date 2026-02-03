@@ -299,6 +299,8 @@ export class Database {
   // --- Self Model ---
 
   saveSelfModel(model: SelfModel): void {
+    const relationshipJson = JSON.stringify(model.relationship)
+    console.log(`[database] saveSelfModel: userId="${model.relationship?.userId}", relationship=${relationshipJson.slice(0, 100)}...`)
     this.db.prepare(`
       INSERT INTO self_model (id, narrative, values_json, tendencies, relationship, strengths, limitations, current_focus, unresolved_threads, anticipations, updated)
       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -317,7 +319,7 @@ export class Database {
       model.narrative,
       JSON.stringify(model.values),
       JSON.stringify(model.tendencies),
-      JSON.stringify(model.relationship),
+      relationshipJson,
       JSON.stringify(model.strengths),
       JSON.stringify(model.limitations),
       model.currentFocus,
@@ -329,13 +331,19 @@ export class Database {
 
   loadSelfModel(): SelfModel | null {
     const row = this.db.prepare('SELECT * FROM self_model WHERE id = 1').get() as Record<string, unknown> | undefined
-    if (!row) return null
+    if (!row) {
+      console.log(`[database] loadSelfModel: no row found`)
+      return null
+    }
+
+    const relationship = JSON.parse(row.relationship as string)
+    console.log(`[database] loadSelfModel: userId="${relationship?.userId}", raw=${(row.relationship as string).slice(0, 100)}...`)
 
     return {
       narrative: row.narrative as string,
       values: JSON.parse(row.values_json as string) as string[],
       tendencies: JSON.parse(row.tendencies as string) as string[],
-      relationship: JSON.parse(row.relationship as string),
+      relationship,
       strengths: JSON.parse(row.strengths as string) as string[],
       limitations: JSON.parse(row.limitations as string) as string[],
       currentFocus: row.current_focus as string,
