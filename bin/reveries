@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Resolve the real location of this script (follows symlinks from npm link)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REVERIES_ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+
+DIST_DIR="$REVERIES_ROOT/dist"
+SRC_DIR="$REVERIES_ROOT/src"
+ENTRY="$DIST_DIR/index.js"
+
+# Check if dist/ needs rebuilding:
+#   - dist/index.js doesn't exist, OR
+#   - any src/ file is newer than dist/index.js
+needs_build=false
+
+if [ ! -f "$ENTRY" ]; then
+  needs_build=true
+else
+  # Find any src file newer than the compiled entry point
+  newer=$(find "$SRC_DIR" -name '*.ts' -newer "$ENTRY" -print -quit 2>/dev/null)
+  if [ -n "$newer" ]; then
+    needs_build=true
+  fi
+fi
+
+if [ "$needs_build" = true ]; then
+  echo "Building reveries..."
+  (cd "$REVERIES_ROOT" && npx tsc) || {
+    echo "Build failed." >&2
+    exit 1
+  }
+fi
+
+exec node "$ENTRY" "$@"

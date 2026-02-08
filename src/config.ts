@@ -10,6 +10,7 @@ export interface ReveriesConfig {
     embeddingModel: string
     provider: 'cerebras' | 'openai' | 'anthropic' | 'ollama' | 'openrouter'
     apiKey?: string
+    voyageApiKey?: string
     baseUrl?: string
   }
   monologue: {
@@ -118,6 +119,14 @@ export function loadConfig(): ReveriesConfig {
   if (process.env.OPENAI_API_KEY && !merged.llm.apiKey) {
     merged.llm.apiKey = process.env.OPENAI_API_KEY
   }
+  if (process.env.VOYAGE_API_KEY && !merged.llm.voyageApiKey) {
+    merged.llm.voyageApiKey = process.env.VOYAGE_API_KEY
+  }
+
+  // Apply config-saved keys to environment for SDKs that read from process.env
+  if (merged.llm.voyageApiKey && !process.env.VOYAGE_API_KEY) {
+    process.env.VOYAGE_API_KEY = merged.llm.voyageApiKey
+  }
 
   return merged
 }
@@ -134,19 +143,17 @@ export function validateConfig(config: ReveriesConfig): ConfigValidationError[] 
   if (!llmKey) {
     errors.push({
       key: 'llm.apiKey',
-      message: `No LLM API key found. Set one of:\n`
-        + `    reveries config set llm.apiKey <key>\n`
-        + `    export CEREBRAS_API_KEY=<key>\n`
-        + `    export OPENAI_API_KEY=<key>`
+      message: `No LLM API key found. Set with:\n`
+        + `    reveries config set llm.apiKey <key>`
     })
   }
 
-  const voyageKey = process.env.VOYAGE_API_KEY
+  const voyageKey = config.llm.voyageApiKey || process.env.VOYAGE_API_KEY
   if (!voyageKey) {
     errors.push({
-      key: 'VOYAGE_API_KEY',
-      message: `No embedding API key found. Set:\n`
-        + `    export VOYAGE_API_KEY=<key>`
+      key: 'llm.voyageApiKey',
+      message: `No embedding API key found. Set with:\n`
+        + `    reveries config set llm.voyageApiKey <key>`
     })
   }
 

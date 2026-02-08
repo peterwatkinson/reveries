@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "reveries": "./dist/index.js"
+    "reveries": "./bin/reveries"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
